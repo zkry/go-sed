@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zkry/gosed/token"
+	"github.com/zkry/go-sed/token"
 )
 
 func TestNextToken(t *testing.T) {

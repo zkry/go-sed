@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zkry/gosed/token"
+	"github.com/zkry/go-sed/token"
 )
 
 type state string
