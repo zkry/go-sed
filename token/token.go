@@ -45,3 +45,9 @@ func LookupIdent(ident string) Type {
 	}
 	return COLON
 }
+
+func (t Token) IsStatementDelim() bool {
+	return t.Type == NEWLINE ||
+		t.Type == EOF ||
+		t.Type == SEMICOLON
+}

@@ -3,7 +3,6 @@ package lexer
 import (
 	"bytes"
 	"errors"
-	"fmt"
 
 	"github.com/zkry/go-sed/token"
 )
@@ -84,50 +83,50 @@ func (l *Lexer) NextToken() token.Token {
 		return tok
 	}
 
-	fmt.Printf("%c: ", l.ch)
+	// fmt.Printf("%c: ", l.ch)
 
 	switch l.s {
 	case stateStart:
-		fmt.Println("START")
+		// fmt.Println("START")
 		tok = l.lexStart()
 	case stateAddr:
-		fmt.Println("ADDR")
+		// fmt.Println("ADDR")
 		tok = l.lexAddr()
 	case stateEndAddr:
-		fmt.Println("ADDR_END")
+		// fmt.Println("ADDR_END")
 		tok = l.lexEndAddr()
 	case stateLabel:
-		fmt.Println("LABEL")
+		// fmt.Println("LABEL")
 		tok = l.lexLabel()
 	case state2ndAddrStart:
-		fmt.Println("ADDR2_START")
+		// fmt.Println("ADDR2_START")
 		tok = l.lex2ndAddrStart()
 	case state2ndAddr:
-		fmt.Println("ADDR2")
+		// fmt.Println("ADDR2")
 		tok = l.lex2ndAddr()
 	case stateEnd2ndAddr:
-		fmt.Println("ADDR2_END")
+		// fmt.Println("ADDR2_END")
 		tok = l.lexEnd2ndAddr()
 	case stateCmd:
-		fmt.Println("CMD")
+		// fmt.Println("CMD")
 		tok = l.lexCmd()
 	case stateFindPtn:
-		fmt.Println("FIND")
+		// fmt.Println("FIND")
 		tok = l.lexFind()
 	case stateReplacePtn:
-		fmt.Println("REPLACE")
+		// fmt.Println("REPLACE")
 		tok = l.lexReplace()
 	case stateFlags:
-		fmt.Println("FLAG")
+		// fmt.Println("FLAG")
 		tok = l.lexFlag()
 	case statePostFlag:
-		fmt.Println("POST_FLAG")
+		// fmt.Println("POST_FLAG")
 		tok = l.lexPostFlag()
 	case stateReadline:
-		fmt.Println("READ_LINE")
+		// fmt.Println("READ_LINE")
 		tok = l.lexReadLine()
 	default:
-		fmt.Println("NOT COVERED")
+		// fmt.Println("NOT COVERED")
 	}
 
 	l.readChar()
@@ -211,10 +210,14 @@ func (l *Lexer) lexFlag() token.Token {
 	case '\n':
 		tok = newToken(token.NEWLINE, l.ch)
 		l.s = stateStart
+	case ' ':
+		l.s = statePostFlag
 	default:
 		if isLetter(l.ch) || isNumber(l.ch) {
 			tok = newToken(token.IDENT, l.ch)
-			l.s = statePostFlag
+			if l.ch == 'r' || l.ch == 'w' {
+				l.s = statePostFlag
+			}
 		} else {
 			tok = newToken(token.ILLEGAL, l.ch)
 		}
@@ -454,7 +457,7 @@ func (l *Lexer) lexStart() token.Token {
 
 func (l *Lexer) readUntilWithPrev(toFunc func(prev, at byte) bool) string {
 	position := l.position
-	for toFunc(l.prevCh, l.ch) {
+	for toFunc(l.prevCh, l.ch) && l.ch != 0 {
 		l.readChar()
 	}
 	ret := l.input[position:l.position]
@@ -466,7 +469,7 @@ func (l *Lexer) readUntilWithPrev(toFunc func(prev, at byte) bool) string {
 
 func (l *Lexer) readUntil(toFunc func(byte) bool) string {
 	position := l.position
-	for toFunc(l.ch) {
+	for toFunc(l.ch) && l.ch != 0 {
 		l.readChar()
 	}
 	ret := l.input[position:l.position]

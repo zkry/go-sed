@@ -1,7 +1,6 @@
 package lexer
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/zkry/go-sed/token"
@@ -10,8 +9,6 @@ import (
 func TestNextToken(t *testing.T) {
 	for i, lt := range lexerTests {
 		l := New(lt.program)
-		fmt.Println("---", i)
-
 		for j, et := range lt.expected {
 			gotTok := l.NextToken()
 
@@ -504,7 +501,7 @@ s/a/b/p`,
 		},
 	},
 	{ // Program 30
-		program: `100,/funny/s,a,b,b breakpoint`,
+		program: `100,/funny/s,a,b,b`,
 		expected: []token.Token{
 			token.Token{token.INT, "100"},
 			token.Token{token.COMMA, ","},
@@ -518,7 +515,6 @@ s/a/b/p`,
 			token.Token{token.LIT, "b"},
 			token.Token{token.DIV, ","},
 			token.Token{token.IDENT, "b"},
-			token.Token{token.IDENT, "breakpoint"},
 			token.Token{token.EOF, ""},
 		},
 	},
@@ -1137,6 +1133,84 @@ a \
 			token.Token{token.BACKSLASH, "\\"},
 			token.Token{token.LIT, "---"},
 			token.Token{token.NEWLINE, "\n"},
+			token.Token{token.EOF, ""},
+		},
+	},
+	{ // Program 46
+		program: `s|a|b|g|`,
+		expected: []token.Token{
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.LIT, "a"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.LIT, "b"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.IDENT, "g"},
+			token.Token{token.ILLEGAL, "|"},
+			token.Token{token.EOF, ""},
+		},
+	},
+	{ // Program 47
+		program: `s|a|b|gp`,
+		expected: []token.Token{
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.LIT, "a"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.LIT, "b"},
+			token.Token{token.DIV, "|"},
+			token.Token{token.IDENT, "g"},
+			token.Token{token.IDENT, "p"},
+			token.Token{token.EOF, ""},
+		},
+	},
+	{ // Program 48
+		program: `s/one/two/;s/two/three/;`,
+		expected: []token.Token{
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "one"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "two"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.SEMICOLON, ";"},
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "two"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "three"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.SEMICOLON, ";"},
+			token.Token{token.EOF, ""},
+		},
+	},
+	{ // Program 49
+		program: "s/one/two/\ns/two/three/",
+		expected: []token.Token{
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "one"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "two"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.NEWLINE, "\n"},
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "two"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "three"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.EOF, ""},
+		},
+	},
+	{ // Program 48
+		program: `s/one/two;`,
+		expected: []token.Token{
+			token.Token{token.CMD, "s"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "one"},
+			token.Token{token.DIV, "/"},
+			token.Token{token.LIT, "two;"},
 			token.Token{token.EOF, ""},
 		},
 	},
