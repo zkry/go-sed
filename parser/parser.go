@@ -59,25 +59,36 @@ func (p *Parser) Errors() []string {
 }
 
 func (p *Parser) parseStatement() ast.Statement {
+
 	var stmt ast.Statement
 
 	if p.curToken.IsStatementDelim() {
 		return nil
 	}
 
-	if p.curTokenIs(token.LBRACE) {
-		// END BLOCK
-	}
+	addr := p.parseAddress()
 
 	if p.curTokenIs(token.COLON) {
 		// ADD LABEL
 	}
 
-	addr := p.parseAddress()
-
 	switch p.curToken.Type {
-	case token.RBRACE:
+	case token.LBRACE:
 		// Start block
+		p.nextToken()
+		block := &ast.Program{}
+		block.Statements = []ast.Statement{}
+		for p.curToken.Type != token.EOF && p.curToken.Type != token.RBRACE {
+			stmt := p.parseStatement()
+			if stmt != nil {
+				block.Statements = append(block.Statements, stmt)
+			}
+			p.nextToken()
+		}
+		stmt = &ast.BlockStmt{
+			Code:      block,
+			Addresser: addr,
+		}
 	case token.CMD:
 		switch p.curToken.Literal {
 		case "a":
@@ -240,12 +251,13 @@ func (p *Parser) parseStatement() ast.Statement {
 			p.expectPeek(token.LIT)
 			ra := p.curToken.Literal
 			p.expectPeek(token.DIV)
-			// TODO: Parse flags
-			stmt = &ast.YStmt{
-				Addresser:   addr,
-				FindAddr:    fa,
-				ReplaceAddr: ra,
+
+			var err error
+			stmt, err = ast.NewYStmt(fa, ra, addr)
+			if err != nil {
+				return nil
 			}
+
 		case "z":
 			stmt = &ast.ZStmt{
 				Addresser: addr,
@@ -279,6 +291,8 @@ func (p *Parser) parseAddress() ast.Addresser {
 	switch p.curToken.Type {
 	case token.CMD:
 		return addr1
+	case token.LBRACE:
+		return addr1
 	case token.COMMA:
 		p.nextToken()
 		addr2 := p.parseAddressPart()
@@ -290,25 +304,28 @@ func (p *Parser) parseAddress() ast.Addresser {
 }
 
 func (p *Parser) parseFlags() *ast.SFlags {
-	ff := p.curToken.Literal
 	flg := &ast.SFlags{}
-	for _, f := range ff {
-		if f >= '1' && f <= '9' {
-			flg.NFlag = int(f - '0')
-		} else if f == 'g' {
+	for {
+		fmt.Println("Current Token: ", p.curToken.Type, p.curToken.Literal)
+		if p.curToken.Literal[0] >= '1' && p.curToken.Literal[0] <= '9' {
+			flg.NFlag = int(p.curToken.Literal[0] - '0')
+		} else if p.curToken.Literal == "g" {
 			flg.GFlag = true
-		} else if f == 'p' {
+		} else if p.curToken.Literal == "p" {
 			flg.PFlag = true
-		} else if f == 'w' {
-			p.expectPeek(token.IDENT)
-			if p.curTokenIs(token.IDENT) {
+		} else if p.curToken.Literal == "w" {
+			if p.expectPeek(token.IDENT) {
 				flg.WFile = p.curToken.Literal
+			} else {
+				p.unexpectedTokenError()
 			}
-		} else {
-			p.unexpectedFlagError(f)
+			return flg // No more flags after this.
 		}
+		if !p.peekTokenIs(token.IDENT) {
+			return flg
+		}
+		p.nextToken()
 	}
-	return flg
 }
 
 func (p *Parser) parseAddressPart() ast.Addresser {
@@ -371,4 +388,8 @@ func (p *Parser) unexpectedTokenError() {
 func (p *Parser) unexpectedFlagError(f rune) {
 	msg := fmt.Sprintf("unexpected flag type %v", f)
 	p.errors = append(p.errors, msg)
+}
+
+func (p *Parser) customError(f string) {
+	p.errors = append(p.errors, f)
 }

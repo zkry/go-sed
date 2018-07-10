@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -157,16 +158,16 @@ func TestRun(t *testing.T) {
 			input:   "hello\nworld",
 			output:  "1\nhello\n2\nworld",
 		},
-		// {
-		// 	program: "s/a/b/",
-		// 	input:   "This is a word.",
-		// 	output:  "This is b word.",
-		// },
-		// { // TODO: Change to traditional Sed syntax
-		// 	program: "s/This is a (.*)\\./$1/",
-		// 	input:   "This is a word.",
-		// 	output:  "word",
-		// },
+		{
+			program: "s/a/b/",
+			input:   "This is a word.",
+			output:  "This is b word.",
+		},
+		{ // TODO: Change to traditional Sed syntax
+			program: "s/This is a (.*)\\./$1/",
+			input:   "This is a word.",
+			output:  "word",
+		},
 		{
 			program: "s/a/b/",
 			input:   "aaaaa",
@@ -192,6 +193,49 @@ func TestRun(t *testing.T) {
 			input:   "a\nb\nc\nd\ne\nf\ng\nh",
 			output:  "a",
 		},
+		{
+			program: "/e/q",
+			input:   "a\nb\nc\nd\ne\nf\ng\nh",
+			output:  "a\nb\nc\nd\ne",
+		},
+		{
+			program: "3q",
+			input:   "a\nb\nc\nd\ne\nf\ng\nh",
+			output:  "a\nb\nc",
+		},
+		{
+			program: "$s/h/-/",
+			input:   "a\nb\nc\nd\ne\nf\ng\nh",
+			output:  "a\nb\nc\nd\ne\nf\ng\n-",
+		},
+		{
+			program: "s/-/X/g\n/one/,/two/s/.*//",
+			input:   "---\n---\none\n+++\n+++\ntwo\n---\n---",
+			output:  "XXX\nXXX\n\n\n\n\nXXX\nXXX",
+		},
+		{
+			program: `
+/here/ {
+	s/here/HERE/
+	s/E/X/g
+}`,
+			input:  "---\nhere1\n---\nhere2",
+			output: "---\nHXRX1\n---\nHXRX2",
+		},
+		{
+			program: `s/here/HERE/p`,
+			input:   "here",
+			output:  "HERE\nHERE",
+		},
+		{
+			program: `
+/here/ {
+	s/here/HERE/p
+	s/E/X/gp
+}`,
+			input:  "---\nhere1\n---\nhere2",
+			output: "---\nHERE1\nHXRX1\nHXRX1\n---\nHERE2\nHXRX2\nHXRX2",
+		},
 	}
 
 	opt := ast.RuntimeOptions{
@@ -200,11 +244,15 @@ func TestRun(t *testing.T) {
 	}
 
 	for i, tt := range runTests {
+		fmt.Printf("\n\n=======================\n")
+		fmt.Printf("======= test %d =======\n", i)
+		fmt.Printf("=======================\n")
 		l := lexer.New(tt.program)
 		p := New(l)
 		program := p.ParseProgram()
 		if len(p.errors) > 0 {
 			t.Errorf("Program [%d] %s encountered errors %v", i, tt.program, p.errors)
+			continue
 		}
 		out := ast.Run(program, tt.input, opt)
 		if out != tt.output {

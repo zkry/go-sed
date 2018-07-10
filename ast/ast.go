@@ -1,6 +1,8 @@
 package ast
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 )
@@ -11,7 +13,7 @@ type Program struct {
 }
 
 type Addresser interface {
-	Address(r Runtime) bool
+	Address(r *Runtime) bool
 }
 
 type Statement interface {
@@ -89,7 +91,9 @@ func (s *SStmt) Run(r *Runtime) {
 		}
 		r.patternSpace = r.patternSpace[0:loc[matchIdx][0]] + rgxp.ReplaceAllString(r.patternSpace[loc[matchIdx][0]:loc[matchIdx][1]], s.ReplaceAddr) + r.patternSpace[loc[matchIdx][1]:len(r.patternSpace)]
 	}
-
+	if s.Flags.PFlag {
+		r.output += r.patternSpace + "\n"
+	}
 }
 
 type DStmt struct {
@@ -257,12 +261,41 @@ func (s *XStmt) Run(r *Runtime) {
 
 type YStmt struct {
 	Addresser
-	FindAddr    string
-	ReplaceAddr string
-	//Flags
+	charMap map[rune]rune
 }
 
 func (s *YStmt) Run(r *Runtime) {
+	var newPS string
+	for _, r := range r.patternSpace {
+		if nr, ok := s.charMap[r]; ok {
+			newPS += string(nr)
+		} else {
+			newPS += string(r)
+		}
+	}
+	r.patternSpace = newPS
+}
+
+func NewYStmt(find, replace string, addr Addresser) (*YStmt, error) {
+	fRunes := []rune{}
+	rRunes := []rune{}
+	for _, r := range find {
+		fRunes = append(fRunes, r)
+	}
+	for _, r := range replace {
+		rRunes = append(rRunes, r)
+	}
+
+	if len(fRunes) != len(rRunes) {
+		return nil, errors.New("transform strings are not the same length")
+	}
+
+	cm := make(map[rune]rune)
+	for i := range fRunes {
+		cm[fRunes[i]] = rRunes[i]
+	}
+
+	return &YStmt{charMap: cm}, nil
 }
 
 type ZStmt struct {
@@ -280,6 +313,16 @@ func (s *EquStmt) Run(r *Runtime) {
 	r.output += strconv.Itoa(r.lineNo+1) + "\n"
 }
 
+type BlockStmt struct {
+	Code *Program
+	Addresser
+}
+
+func (s *BlockStmt) Run(r *Runtime) {
+	fmt.Println("↓ Running BlockStmt")
+	r.directives.runBlock = s.Code
+}
+
 // func (s *Statement) Run(r *Runtime) {
 // 	switch s.Cmd {
 // 	default:
@@ -291,7 +334,7 @@ type RegexpAddr struct {
 	Regexp *regexp.Regexp
 }
 
-func (a *RegexpAddr) Address(r Runtime) bool {
+func (a *RegexpAddr) Address(r *Runtime) bool {
 	return len(a.Regexp.FindIndex([]byte(r.patternSpace))) > 0
 }
 
@@ -299,8 +342,8 @@ type LineNoAddr struct {
 	LineNo int
 }
 
-func (a *LineNoAddr) Address(r Runtime) bool {
-	if r.lineNo == a.LineNo {
+func (a *LineNoAddr) Address(r *Runtime) bool {
+	if r.lineNo+1 == a.LineNo {
 		return true
 	}
 	return false
@@ -308,8 +351,8 @@ func (a *LineNoAddr) Address(r Runtime) bool {
 
 type EOFAddr struct{}
 
-func (a *EOFAddr) Address(r Runtime) bool {
-	return r.lineNo == len(r.lines)
+func (a *EOFAddr) Address(r *Runtime) bool {
+	return r.lineNo == len(r.lines)-1
 }
 
 type RangeAddress struct {
@@ -318,7 +361,7 @@ type RangeAddress struct {
 	on    bool
 }
 
-func (a *RangeAddress) Address(r Runtime) bool {
+func (a *RangeAddress) Address(r *Runtime) bool {
 	if a.on {
 		if a.Addr2.Address(r) {
 			a.on = false
@@ -334,6 +377,6 @@ func (a *RangeAddress) Address(r Runtime) bool {
 
 type BlankAddress struct{}
 
-func (a *BlankAddress) Address(r Runtime) bool {
+func (a *BlankAddress) Address(r *Runtime) bool {
 	return true
 }
