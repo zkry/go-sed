@@ -994,9 +994,9 @@ s/#.*//
 	},
 	{ // Program 45
 		program: `
-/^$/ b para
+/^$/ bpara
 H
-$ b para
+$ bpara
 b
 :para
 x
@@ -1043,7 +1043,7 @@ x
 		program: `
 :again
 	s/([ ^I]*)//
-	t again
+	tagain
 `,
 		expected: []token.Token{
 			token.Token{token.NEWLINE, "\n"},

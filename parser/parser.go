@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -39,14 +40,17 @@ func (p *Parser) nextToken() {
 // and return a program (list of sed commands).
 func (p *Parser) ParseProgram() *ast.Program {
 	program := &ast.Program{}
-	program.Labels = make(map[string]*ast.Statement)
+	program.Labels = make(map[string]int)
 
 	program.Statements = []ast.Statement{}
 
 	for p.curToken.Type != token.EOF {
-		stmt := p.parseStatement()
+		stmt, label := p.parseStatement()
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
+		}
+		if label != "" {
+			program.Labels[label] = len(program.Statements)
 		}
 		p.nextToken()
 	}
@@ -58,19 +62,28 @@ func (p *Parser) Errors() []string {
 	return p.errors
 }
 
-func (p *Parser) parseStatement() ast.Statement {
+func (p *Parser) parseStatement() (ast.Statement, string) {
 
 	var stmt ast.Statement
 
 	if p.curToken.IsStatementDelim() {
-		return nil
+		return nil, ""
+	}
+
+	if p.curTokenIs(token.COLON) {
+		if !p.expectPeek(token.IDENT) {
+			return nil, ""
+		}
+		lit := p.curToken.Literal
+		// Check if valid literal
+		if lit == "" {
+			p.customError("invalid label name")
+			return nil, ""
+		}
+		return nil, lit
 	}
 
 	addr := p.parseAddress()
-
-	if p.curTokenIs(token.COLON) {
-		// ADD LABEL
-	}
 
 	switch p.curToken.Type {
 	case token.LBRACE:
@@ -78,10 +91,14 @@ func (p *Parser) parseStatement() ast.Statement {
 		p.nextToken()
 		block := &ast.Program{}
 		block.Statements = []ast.Statement{}
+		block.Labels = map[string]int{}
 		for p.curToken.Type != token.EOF && p.curToken.Type != token.RBRACE {
-			stmt := p.parseStatement()
+			stmt, l := p.parseStatement()
 			if stmt != nil {
 				block.Statements = append(block.Statements, stmt)
+			}
+			if l != "" {
+				block.Labels[l] = len(block.Statements)
 			}
 			p.nextToken()
 		}
@@ -217,8 +234,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		case "t":
 			p.expectPeek(token.IDENT)
 			stmt = &ast.TStmt{
-				Addresser: addr,
-				FileName:  p.curToken.Literal,
+				Addresser:   addr,
+				BranchIdent: p.curToken.Literal,
 			}
 		case "T":
 			p.expectPeek(token.IDENT)
@@ -255,9 +272,8 @@ func (p *Parser) parseStatement() ast.Statement {
 			var err error
 			stmt, err = ast.NewYStmt(fa, ra, addr)
 			if err != nil {
-				return nil
+				return nil, ""
 			}
-
 		case "z":
 			stmt = &ast.ZStmt{
 				Addresser: addr,
@@ -276,7 +292,7 @@ func (p *Parser) parseStatement() ast.Statement {
 		p.unexpectedTokenError()
 	}
 
-	return stmt
+	return stmt, ""
 }
 
 func (p *Parser) parseAddress() ast.Addresser {
@@ -328,6 +344,35 @@ func (p *Parser) parseFlags() *ast.SFlags {
 	}
 }
 
+// translateLiteral performs the translation from user input
+// to the string that shoudl be processed in the regexp. This
+// incluedes processing escape characters.
+func translateLiteral(l string) string {
+	var retData bytes.Buffer
+	var escState bool
+	for _, r := range l {
+		if escState {
+			switch {
+			case r == '\\':
+				retData.WriteRune('\\')
+			case r == 'n':
+				retData.WriteRune('\n')
+				// TODO: Check case of the literal that was used to divide
+			default:
+				// TODO: Error
+			}
+			escState = false
+		} else {
+			switch {
+			case r == '\\':
+				escState = true
+			default:
+				retData.WriteRune(r)
+			}
+		}
+	}
+	return retData.String()
+}
 func (p *Parser) parseAddressPart() ast.Addresser {
 	var addr ast.Addresser
 	switch p.curToken.Type {
@@ -340,6 +385,7 @@ func (p *Parser) parseAddressPart() ast.Addresser {
 			return nil
 		}
 		// TODO: Should have own form of regexp
+		lit = translateLiteral(lit)
 		regexp := regexp.MustCompile(lit)
 		addr = &ast.RegexpAddr{Regexp: regexp}
 	case token.INT:

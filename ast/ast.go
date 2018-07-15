@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type Program struct {
 	Statements []Statement
-	Labels     map[string]*Statement
+	Labels     map[string]int
 }
 
 type Addresser interface {
@@ -36,14 +37,39 @@ type BStmt struct {
 }
 
 func (s *BStmt) Run(r *Runtime) {
+	r.directives.jumpTo = s.BranchIdent
 }
 
 type CStmt struct {
 	Addresser
 	ChangeLine string
+	prevResult bool
 }
 
 func (s *CStmt) Run(r *Runtime) {
+	// TODO: To be implemented
+	switch s.Addresser.(type) {
+	case *RangeAddress:
+		match := s.Address(r)
+		if !match {
+			if s.prevResult {
+				// output the ChangeLine
+				r.directives.deleteCmd = true
+				r.output += s.ChangeLine + "\n"
+			}
+			s.prevResult = false
+			return
+		}
+		r.directives.deleteCmd = true
+		s.prevResult = true
+	default:
+		match := s.Address(r)
+		if !match {
+			return
+		}
+		r.directives.deleteCmd = true
+		r.output += s.ChangeLine + "\n"
+	}
 }
 
 // SFlags represents the various options that can be passed to the s command.
@@ -71,6 +97,7 @@ func (s *SStmt) Run(r *Runtime) {
 		if err != nil {
 			return
 		}
+		r.subMade = true
 		r.patternSpace = rgxp.ReplaceAllString(r.patternSpace, s.ReplaceAddr)
 	} else {
 		matchIdx := 0
@@ -89,6 +116,7 @@ func (s *SStmt) Run(r *Runtime) {
 		if loc == nil {
 			return
 		}
+		r.subMade = true
 		r.patternSpace = r.patternSpace[0:loc[matchIdx][0]] + rgxp.ReplaceAllString(r.patternSpace[loc[matchIdx][0]:loc[matchIdx][1]], s.ReplaceAddr) + r.patternSpace[loc[matchIdx][1]:len(r.patternSpace)]
 	}
 	if s.Flags.PFlag {
@@ -109,6 +137,12 @@ type D2Stmt struct {
 }
 
 func (s *D2Stmt) Run(r *Runtime) {
+	idx := strings.IndexRune(r.patternSpace, '\n')
+	if idx == -1 {
+		r.directives.deleteCmd = true
+	}
+	r.patternSpace = r.patternSpace[idx+1:]
+	r.directives.restartScript = true
 }
 
 type EStmt struct {
@@ -117,6 +151,7 @@ type EStmt struct {
 }
 
 func (s *EStmt) Run(r *Runtime) {
+	// TODO: To be implemented
 }
 
 type GStmt struct {
@@ -132,6 +167,7 @@ type G2Stmt struct {
 }
 
 func (s *G2Stmt) Run(r *Runtime) {
+	r.patternSpace += "\n" + r.holdSpace
 }
 
 type HStmt struct {
@@ -147,6 +183,7 @@ type H2Stmt struct {
 }
 
 func (s *H2Stmt) Run(r *Runtime) {
+	r.holdSpace += "\n" + r.patternSpace
 }
 
 type IStmt struct {
@@ -178,6 +215,15 @@ type N2Stmt struct {
 }
 
 func (s *N2Stmt) Run(r *Runtime) {
+	r.lineNo++
+	if r.lineNo >= len(r.lines) {
+		r.directives.quitNoPattern = true
+		return
+	}
+	r.patternSpace += "\n" + r.lines[r.lineNo]
+	fmt.Println("  Current pattern space:")
+	fmt.Println(r.patternSpace)
+	fmt.Println("  ======================")
 }
 
 type PStmt struct {
@@ -193,6 +239,13 @@ type P2Stmt struct {
 }
 
 func (s *P2Stmt) Run(r *Runtime) {
+	fmt.Println("Running P2 statement")
+	idx := strings.IndexRune(r.patternSpace, '\n')
+	if idx == -1 {
+		r.output += r.patternSpace
+		return
+	}
+	r.output += r.patternSpace[:idx]
 }
 
 type QStmt struct {
@@ -221,10 +274,14 @@ func (s *R2Stmt) Run(r *Runtime) {
 
 type TStmt struct {
 	Addresser
-	FileName string
+	BranchIdent string
 }
 
 func (s *TStmt) Run(r *Runtime) {
+	if r.subMade {
+		r.subMade = false
+		r.directives.jumpTo = s.BranchIdent
+	}
 }
 
 type T2Stmt struct {

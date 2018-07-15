@@ -22,7 +22,7 @@ func TestStatement(t *testing.T) {
 		{program: "s/2//", isError: false},
 		{program: "a\\\ntext", isError: false},
 		{program: "a text", isError: true},
-		{program: "b text", isError: false},
+		{program: "btext", isError: false},
 		{program: "b", isError: true},
 		{program: "c\\\ntext", isError: false},
 		{program: "/addr/d", isError: false},
@@ -37,7 +37,7 @@ func TestStatement(t *testing.T) {
 		{program: "h", isError: false},
 		{program: "H", isError: false},
 		{program: "/what/q", isError: false},
-		{program: "t label", isError: false},
+		{program: "tlabel", isError: false},
 		{program: "y/abc/def/", isError: false},
 		{program: "n", isError: false},
 		{program: "N", isError: false},
@@ -46,12 +46,13 @@ func TestStatement(t *testing.T) {
 		{program: "x\\", isError: true},
 		{program: "=", isError: false},
 		{program: "= =", isError: true},
+		{program: ":label1", isError: false},
 	}
 
 	for i, test := range tests {
 		l := lexer.New(test.program)
 		p := New(l)
-		_ = p.parseStatement()
+		_, _ = p.parseStatement()
 		if len(p.Errors()) > 0 && !test.isError {
 			t.Errorf("Stmt [%d] %s failed: expected no error, got %v\n", i, test.program, p.Errors())
 		} else if len(p.Errors()) == 0 && test.isError {
@@ -79,7 +80,7 @@ func TestParse(t *testing.T) {
 					ReplaceAddr: "two",
 				},
 			},
-			Labels: map[string]*ast.Statement{},
+			Labels: map[string]int{},
 		}},
 		{program: "s/one/two/;s/two/three/;", isError: false},
 		{program: "s/one/two/\ns/two/three/", isError: false},
@@ -235,6 +236,82 @@ func TestRun(t *testing.T) {
 }`,
 			input:  "---\nhere1\n---\nhere2",
 			output: "---\nHERE1\nHXRX1\nHXRX1\n---\nHERE2\nHXRX2\nHXRX2",
+		},
+		{
+			program: `
+:label1
+/xxxxxxx/blabel2
+s/x/xx/p
+blabel1
+:label2
+s/x/=/g
+p
+`,
+			input:  "x",
+			output: "xx\nxxx\nxxxx\nxxxxx\nxxxxxx\nxxxxxxx\n=======\n=======",
+		},
+		{
+			program: `G`,
+			input:   "one\ntwo\nthree\nfour",
+			output:  "one\n\ntwo\n\nthree\n\nfour\n",
+		},
+		{
+			program: `\xtwoxd`,
+			input:   "one\n\ntwo\n\n\nthree\n\n\n\nfour\n\n\n\n\nend",
+			output:  "one\n\n\n\nthree\n\n\n\nfour\n\n\n\n\nend",
+		},
+		{
+			program: `
+N
+/one\ntwo/s/one/ONE/`,
+			input:  "one\ntwo\nthree\nfour",
+			output: "ONE\ntwo\nthree\nfour",
+		},
+		{
+			program: `
+/^$/ {
+	N
+	/^\n$/D
+}
+`,
+			input:  "one\n\ntwo\n\n\nthree\n\n\n\nfour\n\n\n\n\nend",
+			output: "one\n\ntwo\n\nthree\n\nfour\n\nend",
+		},
+		{
+			program: `
+N
+/1.*\n.*2/P
+D
+`,
+			input:  "line1\nline2\nline3\nline4",
+			output: "line1",
+		},
+		{
+			program: `
+:beginning
+s/1/ one/
+s/on/ON/
+p
+tbeginning
+s/here/HERE/
+`,
+			input:  "here1\nhere2\nhere3\nhere4\nThis is the end.",
+			output: "here ONe\nhere ONe\nHERE ONe\nhere2\nHERE2\nhere3\nHERE3\nhere4\nHERE4\nThis is the end.\nThis is the end.",
+		},
+		{
+			program: `H;G`,
+			input:   "here1\nhere2",
+			output:  "here1\n\nhere1\nhere2\n\nhere1\nhere2",
+		},
+		{
+			program: "c\\\nCHANGE",
+			input:   "here1\nhere2\nhere3\nhere4\nhere5",
+			output:  "CHANGE\nCHANGE\nCHANGE\nCHANGE\nCHANGE",
+		},
+		{
+			program: "/START/,/END/c\\\nCHANGE",
+			input:   "START\nhere2\nhere3\nhere4\nEND",
+			output:  "CHANGE",
 		},
 	}
 

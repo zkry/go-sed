@@ -282,14 +282,12 @@ func (l *Lexer) lexCmd() token.Token {
 		}
 		tok = newToken(token.ILLEGAL, l.ch)
 	case 'b', 't':
-		l.readUntil(isSpace)
 		if l.ch == '\n' {
 			tok = newToken(token.NEWLINE, '\n')
 			l.s = stateStart
 			return tok
 		}
 		if isLetter(l.ch) {
-			l.readChar()
 			tok.Literal = l.readUntil(not(isNewlineOrEOF))
 			tok.Type = token.IDENT
 			return tok

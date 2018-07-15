@@ -6,10 +6,13 @@ import (
 )
 
 type directives struct {
-	nextCmd   bool
-	deleteCmd bool
-	quitCmd   bool
-	runBlock  *Program
+	nextCmd       bool
+	deleteCmd     bool
+	restartScript bool // Used for the 'D' command
+	quitCmd       bool
+	quitNoPattern bool
+	runBlock      *Program
+	jumpTo        string
 }
 
 type Runtime struct {
@@ -21,6 +24,7 @@ type Runtime struct {
 	program      *Program
 	output       string
 	directives   directives
+	subMade      bool
 }
 
 type RuntimeOptions struct {
@@ -28,6 +32,7 @@ type RuntimeOptions struct {
 	AutoPrint      bool
 	DefaultRuntime *Runtime
 	IsBlock        bool
+	LineNoStart    int
 }
 
 func Run(p *Program, text string, options RuntimeOptions) string {
@@ -45,14 +50,15 @@ func Run(p *Program, text string, options RuntimeOptions) string {
 	retStr := ""
 
 lineLoop:
-	for r.lineNo = 0; r.lineNo < len(r.lines); r.lineNo++ {
-		fmt.Printf("line[%d]=%s\n", r.lineNo, r.lines[r.lineNo])
+	for r.lineNo = options.LineNoStart; r.lineNo < len(r.lines); r.lineNo++ {
+		fmt.Printf("\n\nline[%d]=%s\n", r.lineNo, r.lines[r.lineNo])
 		r.output = ""
 		r.patternSpace = r.lines[r.lineNo]
+		r.subMade = false
 		pc := 0
 		for pc < len(p.Statements) {
 			s := p.Statements[pc]
-			fmt.Printf("Running statement: %T\n", s)
+			fmt.Printf("Running statement[%d]: %T\n", pc, s)
 			match := s.Address(r)
 			if !match {
 				pc++
@@ -60,6 +66,7 @@ lineLoop:
 			}
 			s.Run(r)
 			if r.directives.nextCmd {
+				fmt.Println("[D] nextCmd")
 				// Proceed to the next line printing out current pattern space.
 				r.directives.nextCmd = false
 				if options.AutoPrint {
@@ -68,28 +75,48 @@ lineLoop:
 				retStr += r.output
 				continue lineLoop
 			} else if r.directives.deleteCmd {
+				fmt.Println("[D] deleteCmd")
 				// Proceed to the next line not printing out current pattern space.
 				r.directives.deleteCmd = false
+				retStr += r.output
 				continue lineLoop
 			} else if r.directives.quitCmd {
+				fmt.Println("[D] quitCmd")
+				r.directives.quitCmd = false
 				// Quit the program with the rest of the pattern space.
+				retStr += r.output
 				retStr += r.patternSpace
 				return retStr
+			} else if r.directives.quitNoPattern {
+				fmt.Println("[D] quit No Pattern")
+				r.directives.quitNoPattern = false
+				// Quit the program with the rest of the output.
+				retStr += r.output
+				return retStr
 			} else if r.directives.runBlock != nil {
+				fmt.Println("[D] runBlock")
 				opt := options
 				opt.DefaultRuntime = r
 				opt.IsBlock = true
-				prevLines, prevLineNo, _ := opt.DefaultRuntime.lines, opt.DefaultRuntime.lineNo, opt.DefaultRuntime.output
-
-				opt.DefaultRuntime.lines = opt.DefaultRuntime.lines[r.lineNo : r.lineNo+1]
+				opt.LineNoStart = r.lineNo
 
 				r.output = Run(r.directives.runBlock, "", opt)
-				opt.DefaultRuntime.lines = prevLines
-				opt.DefaultRuntime.lineNo = prevLineNo
-				// opt.DefaultRuntime.output = prevOut
+
 				fmt.Println("exiting block statement")
 				fmt.Println("  opt.dr.output=", opt.DefaultRuntime.output)
 				fmt.Println("  r.output=", r.output)
+			} else if r.directives.jumpTo != "" {
+				fmt.Println("[D] jumpTo")
+				label := r.directives.jumpTo
+				r.directives.jumpTo = ""
+				fmt.Printf("Jumping to %s@%d\n", label, p.Labels[label])
+				pc = p.Labels[label]
+				continue
+			} else if r.directives.restartScript {
+				fmt.Println("[D] restartScript")
+				r.directives.restartScript = false
+				pc = 0
+				continue
 			}
 			pc++
 		}
@@ -101,6 +128,9 @@ lineLoop:
 		if len(r.appendSpace) > 0 {
 			retStr += r.appendSpace
 			r.appendSpace = ""
+		}
+		if options.IsBlock {
+			return retStr
 		}
 	}
 	if len(retStr) > 0 && retStr[len(retStr)-1] == '\n' && !options.IsBlock {
