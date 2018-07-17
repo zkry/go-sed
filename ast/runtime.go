@@ -15,7 +15,7 @@ type directives struct {
 	jumpTo        string
 }
 
-type Runtime struct {
+type runtime struct {
 	patternSpace string
 	holdSpace    string
 	appendSpace  string
@@ -30,15 +30,15 @@ type Runtime struct {
 type RuntimeOptions struct {
 	AllowExec      bool
 	AutoPrint      bool
-	DefaultRuntime *Runtime
+	DefaultRuntime *runtime
 	IsBlock        bool
 	LineNoStart    int
 }
 
-func Run(p *Program, text string, options RuntimeOptions) string {
+func (p *Program) Run(text string, options RuntimeOptions) string {
 	// TODO: Setup runtime flags
 	// Create runtime
-	r := &Runtime{
+	r := &runtime{
 		program: p,
 		lines:   strings.Split(text, "\n"),
 	}

@@ -15,16 +15,33 @@ if (!the_program) {
 }`
 
 cmd := sed.MustCompileProgram('s/^/     /')
-fmt.Println(cmd.Filter(myTxt))
 
-// Prints the above 'if' statement indented by five spaces to the left
+fmt.Println(cmd.FilterString(myTxt))
+```
+
+## Usage
+Here is a possible usage API... still trying to work this out.
+```
+func MustCompileProgram(program string, opt Options) Program
+func CompileProgram(program string, opt Options) (Program, error)
+
+func (p Program) Copy(data []byte) Program
+
+func (p Program) Filter(data []byte) []byte
+func (p Program) FilterWithOptions(data []byte, opt Options) []byte
+
+func (p Program) FilterString(str string) string
+func (p Program) FilterStringWithOptions(data []byte, opt Options) []byte
+
+func (p Program) Stream(chan []byte) chan []byte
+func (p Program) StreamWithOptions(chan []byte, opt Options) chan []byte
 ```
 
 This is still a work in progress and is in the very early stages of development.
 
 ### Progress:
 - [x] Lexer
-- [ ] Parser
-- [ ] Evaluating Program
+- [x] Parser
+- [x] Evaluating Program
 - [ ] Command line program
 - [ ] Go Library

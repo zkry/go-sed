@@ -9,47 +9,47 @@ import (
 )
 
 type Program struct {
-	Statements []Statement
+	Statements []statement
 	Labels     map[string]int
 }
 
-type Addresser interface {
-	Address(r *Runtime) bool
+type addresser interface {
+	Address(r *runtime) bool
 }
 
-type Statement interface {
-	Addresser
-	Run(r *Runtime)
+type statement interface {
+	addresser
+	Run(r *runtime)
 }
 
-type AStmt struct {
-	Addresser
+type aStmt struct {
+	addresser
 	AppendLine string
 }
 
-func (s *AStmt) Run(r *Runtime) {
+func (s *aStmt) Run(r *runtime) {
 	r.appendSpace += s.AppendLine + "\n"
 }
 
-type BStmt struct {
-	Addresser
+type bStmt struct {
+	addresser
 	BranchIdent string
 }
 
-func (s *BStmt) Run(r *Runtime) {
+func (s *bStmt) Run(r *runtime) {
 	r.directives.jumpTo = s.BranchIdent
 }
 
-type CStmt struct {
-	Addresser
+type cStmt struct {
+	addresser
 	ChangeLine string
 	prevResult bool
 }
 
-func (s *CStmt) Run(r *Runtime) {
+func (s *cStmt) Run(r *runtime) {
 	// TODO: To be implemented
-	switch s.Addresser.(type) {
-	case *RangeAddress:
+	switch s.addresser.(type) {
+	case *rangeAddress:
 		match := s.Address(r)
 		if !match {
 			if s.prevResult {
@@ -74,21 +74,21 @@ func (s *CStmt) Run(r *Runtime) {
 
 // SFlags represents the various options that can be passed to the s command.
 // The zero value means the flag is not set.
-type SFlags struct {
+type sFlags struct {
 	NFlag int    // N - Make the substitution only for the Nth occurence of regexp
 	GFlag bool   // g - Make the substitution for all non-overlapping matches
 	PFlag bool   // p - Write the pattern space to stdout
 	WFile string // w file  - append pattern space to file if a replacement made.
 }
 
-type SStmt struct {
-	Addresser
+type sStmt struct {
+	addresser
 	FindAddr    string
 	ReplaceAddr string
-	Flags       SFlags
+	Flags       sFlags
 }
 
-func (s *SStmt) Run(r *Runtime) {
+func (s *sStmt) Run(r *runtime) {
 	var rgxp *regexp.Regexp
 	var err error
 	if s.Flags.GFlag {
@@ -124,19 +124,19 @@ func (s *SStmt) Run(r *Runtime) {
 	}
 }
 
-type DStmt struct {
-	Addresser
+type dStmt struct {
+	addresser
 }
 
-func (s *DStmt) Run(r *Runtime) {
+func (s *dStmt) Run(r *runtime) {
 	r.directives.deleteCmd = true
 }
 
-type D2Stmt struct {
-	Addresser
+type d2Stmt struct {
+	addresser
 }
 
-func (s *D2Stmt) Run(r *Runtime) {
+func (s *d2Stmt) Run(r *runtime) {
 	idx := strings.IndexRune(r.patternSpace, '\n')
 	if idx == -1 {
 		r.directives.deleteCmd = true
@@ -145,76 +145,76 @@ func (s *D2Stmt) Run(r *Runtime) {
 	r.directives.restartScript = true
 }
 
-type EStmt struct {
-	Addresser
+type eStmt struct {
+	addresser
 	Command string
 }
 
-func (s *EStmt) Run(r *Runtime) {
+func (s *eStmt) Run(r *runtime) {
 	// TODO: To be implemented
 }
 
-type GStmt struct {
-	Addresser
+type gStmt struct {
+	addresser
 }
 
-func (s *GStmt) Run(r *Runtime) {
+func (s *gStmt) Run(r *runtime) {
 	r.patternSpace = r.holdSpace
 }
 
-type G2Stmt struct {
-	Addresser
+type g2Stmt struct {
+	addresser
 }
 
-func (s *G2Stmt) Run(r *Runtime) {
+func (s *g2Stmt) Run(r *runtime) {
 	r.patternSpace += "\n" + r.holdSpace
 }
 
-type HStmt struct {
-	Addresser
+type hStmt struct {
+	addresser
 }
 
-func (s *HStmt) Run(r *Runtime) {
+func (s *hStmt) Run(r *runtime) {
 	r.holdSpace = r.patternSpace
 }
 
-type H2Stmt struct {
-	Addresser
+type h2Stmt struct {
+	addresser
 }
 
-func (s *H2Stmt) Run(r *Runtime) {
+func (s *h2Stmt) Run(r *runtime) {
 	r.holdSpace += "\n" + r.patternSpace
 }
 
-type IStmt struct {
-	Addresser
+type iStmt struct {
+	addresser
 	InsertLine string
 }
 
-func (s *IStmt) Run(r *Runtime) {
+func (s *iStmt) Run(r *runtime) {
 	r.output += s.InsertLine + "\n"
 }
 
-type LStmt struct {
-	Addresser
+type lStmt struct {
+	addresser
 }
 
-func (s *LStmt) Run(r *Runtime) {
+func (s *lStmt) Run(r *runtime) {
 }
 
-type NStmt struct {
-	Addresser
+type nStmt struct {
+	addresser
 }
 
-func (s *NStmt) Run(r *Runtime) {
+func (s *nStmt) Run(r *runtime) {
 	r.directives.nextCmd = true
 }
 
-type N2Stmt struct {
-	Addresser
+type n2Stmt struct {
+	addresser
 }
 
-func (s *N2Stmt) Run(r *Runtime) {
+func (s *n2Stmt) Run(r *runtime) {
 	r.lineNo++
 	if r.lineNo >= len(r.lines) {
 		r.directives.quitNoPattern = true
@@ -226,19 +226,19 @@ func (s *N2Stmt) Run(r *Runtime) {
 	fmt.Println("  ======================")
 }
 
-type PStmt struct {
-	Addresser
+type pStmt struct {
+	addresser
 }
 
-func (s *PStmt) Run(r *Runtime) {
+func (s *pStmt) Run(r *runtime) {
 	r.output += r.patternSpace + "\n"
 }
 
-type P2Stmt struct {
-	Addresser
+type p2Stmt struct {
+	addresser
 }
 
-func (s *P2Stmt) Run(r *Runtime) {
+func (s *p2Stmt) Run(r *runtime) {
 	fmt.Println("Running P2 statement")
 	idx := strings.IndexRune(r.patternSpace, '\n')
 	if idx == -1 {
@@ -248,80 +248,84 @@ func (s *P2Stmt) Run(r *Runtime) {
 	r.output += r.patternSpace[:idx]
 }
 
-type QStmt struct {
-	Addresser
+type qStmt struct {
+	addresser
 }
 
-func (s *QStmt) Run(r *Runtime) {
+func (s *qStmt) Run(r *runtime) {
 	r.directives.quitCmd = true
 }
 
-type RStmt struct {
-	Addresser
+type rStmt struct {
+	addresser
 	FileName string
 }
 
-func (s *RStmt) Run(r *Runtime) {
+func (s *rStmt) Run(r *runtime) {
 }
 
-type R2Stmt struct {
-	Addresser
+type r2Stmt struct {
+	addresser
 	FileName string
 }
 
-func (s *R2Stmt) Run(r *Runtime) {
+func (s *r2Stmt) Run(r *runtime) {
+	// To be implemented
 }
 
-type TStmt struct {
-	Addresser
+type tStmt struct {
+	addresser
 	BranchIdent string
 }
 
-func (s *TStmt) Run(r *Runtime) {
+func (s *tStmt) Run(r *runtime) {
 	if r.subMade {
 		r.subMade = false
 		r.directives.jumpTo = s.BranchIdent
 	}
 }
 
-type T2Stmt struct {
-	Addresser
+type t2Stmt struct {
+	addresser
 	FileName string
 }
 
-func (s *T2Stmt) Run(r *Runtime) {
+func (s *t2Stmt) Run(r *runtime) {
+	// To be implemented
 }
 
-type WStmt struct {
-	Addresser
+type wStmt struct {
+	addresser
 	FileName string
 }
 
-func (s *WStmt) Run(r *Runtime) {
+func (s *wStmt) Run(r *runtime) {
+	// To be implemented
 }
 
-type W2Stmt struct {
-	Addresser
+type w2Stmt struct {
+	addresser
 	FileName string
 }
 
-func (s *W2Stmt) Run(r *Runtime) {
+func (s *w2Stmt) Run(r *runtime) {
+	// To be implemented
 }
 
-type XStmt struct {
-	Addresser
+type xStmt struct {
+	addresser
 }
 
-func (s *XStmt) Run(r *Runtime) {
+func (s *xStmt) Run(r *runtime) {
 	r.patternSpace, r.holdSpace = r.holdSpace, r.patternSpace
 }
 
-type YStmt struct {
-	Addresser
+type yStmt struct {
+	addresser
 	charMap map[rune]rune
 }
 
-func (s *YStmt) Run(r *Runtime) {
+func (s *yStmt) Run(r *runtime) {
 	var newPS string
 	for _, r := range r.patternSpace {
 		if nr, ok := s.charMap[r]; ok {
@@ -333,7 +337,7 @@ func (s *YStmt) Run(r *Runtime) {
 	r.patternSpace = newPS
 }
 
-func NewYStmt(find, replace string, addr Addresser) (*YStmt, error) {
+func newYStmt(find, replace string, addr addresser) (*yStmt, error) {
 	fRunes := []rune{}
 	rRunes := []rune{}
 	for _, r := range find {
@@ -352,73 +356,74 @@ func NewYStmt(find, replace string, addr Addresser) (*YStmt, error) {
 		cm[fRunes[i]] = rRunes[i]
 	}
 
-	return &YStmt{charMap: cm}, nil
+	return &yStmt{charMap: cm}, nil
 }
 
-type ZStmt struct {
-	Addresser
+type zStmt struct {
+	addresser
 }
 
-func (s *ZStmt) Run(r *Runtime) {
+func (s *zStmt) Run(r *runtime) {
+	// To be implemented
 }
 
-type EquStmt struct {
-	Addresser
+type equStmt struct {
+	addresser
 }
 
-func (s *EquStmt) Run(r *Runtime) {
+func (s *equStmt) Run(r *runtime) {
 	r.output += strconv.Itoa(r.lineNo+1) + "\n"
 }
 
-type BlockStmt struct {
+type blockStmt struct {
 	Code *Program
-	Addresser
+	addresser
 }
 
-func (s *BlockStmt) Run(r *Runtime) {
+func (s *blockStmt) Run(r *runtime) {
 	fmt.Println("↓ Running BlockStmt")
 	r.directives.runBlock = s.Code
 }
 
-// func (s *Statement) Run(r *Runtime) {
+// func (s *Statement) Run(r *runtime) {
 // 	switch s.Cmd {
 // 	default:
 // 	}
 // 	return l
 // }
 
-type RegexpAddr struct {
+type regexpAddr struct {
 	Regexp *regexp.Regexp
 }
 
-func (a *RegexpAddr) Address(r *Runtime) bool {
+func (a *regexpAddr) Address(r *runtime) bool {
 	return len(a.Regexp.FindIndex([]byte(r.patternSpace))) > 0
 }
 
-type LineNoAddr struct {
+type lineNoAddr struct {
 	LineNo int
 }
 
-func (a *LineNoAddr) Address(r *Runtime) bool {
+func (a *lineNoAddr) Address(r *runtime) bool {
 	if r.lineNo+1 == a.LineNo {
 		return true
 	}
 	return false
 }
 
-type EOFAddr struct{}
+type eofAddr struct{}
 
-func (a *EOFAddr) Address(r *Runtime) bool {
+func (a *eofAddr) Address(r *runtime) bool {
 	return r.lineNo == len(r.lines)-1
 }
 
-type RangeAddress struct {
-	Addr1 Addresser
-	Addr2 Addresser
+type rangeAddress struct {
+	Addr1 addresser
+	Addr2 addresser
 	on    bool
 }
 
-func (a *RangeAddress) Address(r *Runtime) bool {
+func (a *rangeAddress) Address(r *runtime) bool {
 	if a.on {
 		if a.Addr2.Address(r) {
 			a.on = false
@@ -432,8 +437,8 @@ func (a *RangeAddress) Address(r *Runtime) bool {
 	return false
 }
 
-type BlankAddress struct{}
+type blankAddress struct{}
 
-func (a *BlankAddress) Address(r *Runtime) bool {
+func (a *blankAddress) Address(r *runtime) bool {
 	return true
 }
