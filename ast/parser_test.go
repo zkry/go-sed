@@ -68,9 +68,9 @@ func TestParse(t *testing.T) {
 	tests := []struct {
 		program string
 		isError bool
-		ast     *program
+		ast     *Program
 	}{
-		{program: "s/one/two/", isError: false, ast: &program{
+		{program: "s/one/two/", isError: false, ast: &Program{
 			Statements: []statement{
 				&sStmt{
 					addresser:   &blankAddress{},
@@ -329,7 +329,7 @@ s/here/HERE/
 			t.Errorf("Program [%d] %s encountered errors %v", i, tt.program, p.errors)
 			continue
 		}
-		out := Run(program, tt.input, opt)
+		out := program.Run(tt.input, opt)
 		if out != tt.output {
 			t.Errorf("Program [%d] %s produced incorrect output.\n Expected:\n-----\n%s\n-----\n Got:\n-----\n%s\n-----\n", i, tt.program, tt.output, out)
 		}

@@ -33,6 +33,7 @@ type RuntimeOptions struct {
 	DefaultRuntime *runtime
 	IsBlock        bool
 	LineNoStart    int
+	AppendFile     bool
 }
 
 func (p *Program) Run(text string, options RuntimeOptions) string {
@@ -100,7 +101,7 @@ lineLoop:
 				opt.IsBlock = true
 				opt.LineNoStart = r.lineNo
 
-				r.output = Run(r.directives.runBlock, "", opt)
+				r.output = r.directives.runBlock.Run("", opt)
 
 				fmt.Println("exiting block statement")
 				fmt.Println("  opt.dr.output=", opt.DefaultRuntime.output)
