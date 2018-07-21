@@ -321,7 +321,6 @@ func (p *Parser) parseAddress() addresser {
 func (p *Parser) parseFlags() *sFlags {
 	flg := &sFlags{}
 	for {
-		fmt.Println("Current Token: ", p.curToken.Type, p.curToken.Literal)
 		if p.curToken.Literal[0] >= '1' && p.curToken.Literal[0] <= '9' {
 			flg.NFlag = int(p.curToken.Literal[0] - '0')
 		} else if p.curToken.Literal == "g" {
