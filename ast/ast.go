@@ -6,11 +6,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/zkry/go-sed/token"
 )
 
 type Program struct {
 	Statements []statement
 	Labels     map[string]int
+	Tokens     []token.Token
 }
 
 type addresser interface {

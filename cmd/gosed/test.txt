@@ -1,3 +1,6 @@
+:label1
 s/e/E/g
-
-
+tlabel
+/asdf/ {
+    d
+}

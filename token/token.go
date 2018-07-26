@@ -3,8 +3,9 @@ package token
 type Type string
 
 type Token struct {
-	Type    Type
-	Literal string
+	Type       Type
+	Literal    string
+	Start, End int
 }
 
 const (

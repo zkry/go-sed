@@ -17,6 +17,7 @@ type Parser struct {
 	peekToken token.Token
 
 	errors []string
+	tokens []token.Token
 }
 
 func New(l *lexer.Lexer) *Parser {
@@ -33,6 +34,8 @@ func New(l *lexer.Lexer) *Parser {
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
 	p.peekToken = p.l.NextToken()
+
+	p.tokens = append(p.tokens, p.peekToken)
 }
 
 // ParserProgram will parse the program that was initialized in the parer
@@ -53,6 +56,8 @@ func (p *Parser) ParseProgram() *Program {
 		}
 		p.nextToken()
 	}
+	program.Tokens = make([]token.Token, len(p.tokens))
+	copy(program.Tokens, p.tokens)
 	return program
 }
 

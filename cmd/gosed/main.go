@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"os"
 
 	gosed "github.com/zkry/go-sed"
 )
@@ -65,6 +68,7 @@ type Config struct {
 	bufferedOutput   bool         // Translates to -l flag
 	silenceLine      bool         // Translates to -n flag
 	commandCt        int
+	interactive      bool
 }
 
 func combineInputs(files []string) []byte {
@@ -114,6 +118,18 @@ func displayHelp() {
 
 }
 
+func runFromStdin(program *gosed.Program) {
+	r := bufio.NewReader(os.Stdin)
+	for {
+		line, err := r.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
+		out := program.FilterString(line)
+		fmt.Print(out)
+	}
+}
+
 func main() {
 	var config Config
 	// flag.Var(&config.commandFiles, "f", "")
@@ -123,8 +139,18 @@ func main() {
 	flag.BoolVar(&config.bufferedOutput, "l", false, "")
 	flag.BoolVar(&config.appendFile, "a", false, "")
 	flag.BoolVar(&config.extendedRegexp, "E", false, "")
+	flag.BoolVar(&config.interactive, "i", false, "")
 	flag.Parse()
 	config.commandCt = order
+
+	if config.interactive {
+		runInteractive()
+	}
+
+	if config.commandCt == 0 && flag.NArg() == 0 {
+		displayHelp()
+		return
+	}
 
 	if config.commandCt > 0 {
 		program, err := programFromConfig(config)
@@ -139,28 +165,26 @@ func main() {
 			fmt.Print(string(out))
 		} else {
 			// Read Stdout through commands
-			// TODO: Line by line stdin processing
+			runFromStdin(program)
 		}
-	} else {
-		if flag.NArg() > 0 {
-			// Use arg[0] as command and arg[1:] as input files. If only one arg,
-			// read from stdout
-			fname := flag.Arg(0)
-			program, err := gosed.Compile(fname, gosed.Options{})
-			if err != nil {
-				fmt.Printf("gosed: syntax error in %s\n", fname)
-				return
-			}
-			if flag.NArg() == 1 {
-				// TODO: Line by line stdin processing
-				return
-			}
-			programInput := combineInputs(flag.Args()[1:])
-			out := program.Filter(programInput)
-			fmt.Print(string(out))
-		} else {
-			displayHelp()
+		return
+	}
+
+	if flag.NArg() > 0 {
+		// Use arg[0] as command and arg[1:] as input files. If only one arg,
+		// read from stdout
+		fname := flag.Arg(0)
+		program, err := gosed.Compile(fname, gosed.Options{})
+		if err != nil {
+			fmt.Printf("gosed: syntax error in %s\n", fname)
 			return
 		}
+		if flag.NArg() == 1 {
+			runFromStdin(program)
+			return
+		}
+		programInput := combineInputs(flag.Args()[1:])
+		out := program.Filter(programInput)
+		fmt.Print(string(out))
 	}
 }

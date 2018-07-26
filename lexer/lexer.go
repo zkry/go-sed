@@ -76,6 +76,8 @@ func (l *Lexer) readChar() {
 func (l *Lexer) NextToken() token.Token {
 	var tok token.Token
 
+	startPos := l.position
+
 	// Check for the end of file
 	if l.ch == 0 {
 		tok.Literal = ""
@@ -130,6 +132,9 @@ func (l *Lexer) NextToken() token.Token {
 	}
 
 	l.readChar()
+
+	tok.Start = startPos
+	tok.End = l.position
 	return tok
 }
 
