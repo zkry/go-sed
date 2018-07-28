@@ -1,0 +1,17 @@
+This is a line with a regex
+this is a line without it
+regex
+none
+
+
+some blank lines
+
+
+and 
+
+
+regex again
+
+
+
+this is the end

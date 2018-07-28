@@ -1,0 +1,3 @@
+NAME=`echo $LINE | cut -f 1 -d "="`
+VALUE_ENCODED=`echo $LINE | cut -f 2- -d "="`
+eval "VALUE_DECODED=\"$VALUE_ENCODED\""

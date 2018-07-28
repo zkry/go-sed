@@ -1,0 +1,4 @@
+regex
+this is a line
+regex
+regex
