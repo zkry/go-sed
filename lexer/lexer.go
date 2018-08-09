@@ -56,6 +56,14 @@ func (l *Lexer) rewindChar() {
 	}
 	l.position--
 	l.readPosition--
+	if l.readPosition >= len(l.input) {
+		l.ch = 0
+	} else {
+		l.ch = l.input[l.readPosition]
+		if l.readPosition > 0 {
+			l.prevCh = l.input[l.readPosition-1]
+		}
+	}
 }
 
 func (l *Lexer) readChar() {
@@ -291,6 +299,9 @@ func (l *Lexer) lexCmd() token.Token {
 			tok = newToken(token.NEWLINE, '\n')
 			l.s = stateStart
 			return tok
+		}
+		if l.ch == ' ' {
+			l.readChar()
 		}
 		if isLetter(l.ch) {
 			tok.Literal = l.readUntil(not(isNewlineOrEOF))

@@ -1,7 +1,6 @@
 package gosed
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/zkry/go-sed/ast"
@@ -49,13 +48,13 @@ func MustCompile(program string, opt Options) *Program {
 
 // Compile compiles a sed script and returns a program upon successfull
 // compilation. If unsuccessfull errors are returned.
-func Compile(program string, opt Options) (*Program, error) {
+func Compile(program string, opt Options) (*Program, ast.ErrorList) {
 	l := lexer.New(program)
 	p := ast.New(l)
 	prg := p.ParseProgram()
 	errs := p.Errors()
-	if len(errs) > 0 {
-		return nil, errors.New("Program didn not compile")
+	if errs != nil {
+		return nil, errs
 	}
 	return &Program{p: prg, opt: opt}, nil
 }

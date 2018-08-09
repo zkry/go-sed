@@ -388,13 +388,6 @@ func (s *blockStmt) Run(r *runtime) {
 	r.directives.runBlock = s.Code
 }
 
-// func (s *Statement) Run(r *runtime) {
-// 	switch s.Cmd {
-// 	default:
-// 	}
-// 	return l
-// }
-
 type regexpAddr struct {
 	Regexp *regexp.Regexp
 }
@@ -418,6 +411,14 @@ type eofAddr struct{}
 
 func (a *eofAddr) Address(r *runtime) bool {
 	return r.lineNo == len(r.lines)-1
+}
+
+type notAddr struct {
+	Addr addresser
+}
+
+func (a *notAddr) Address(r *runtime) bool {
+	return !a.Address(r)
 }
 
 type rangeAddress struct {

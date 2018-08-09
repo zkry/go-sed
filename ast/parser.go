@@ -16,6 +16,7 @@ type Parser struct {
 	curToken  token.Token
 	peekToken token.Token
 
+	lineCt int
 	errors []string
 	tokens []token.Token
 }
@@ -34,6 +35,11 @@ func New(l *lexer.Lexer) *Parser {
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
 	p.peekToken = p.l.NextToken()
+
+	// Specail next token logic here.
+	if p.curTokenIs(token.NEWLINE) {
+		p.lineCt++
+	}
 
 	p.tokens = append(p.tokens, p.peekToken)
 }
@@ -61,13 +67,22 @@ func (p *Parser) ParseProgram() *Program {
 	return program
 }
 
+type ErrorList []string
+
+func (e ErrorList) Error() string {
+	buff := bytes.Buffer{}
+	for _, err := range e {
+		buff.WriteString(err)
+	}
+	return buff.String()
+}
+
 // Errors returns the list of errors encountered during the parsing process.
-func (p *Parser) Errors() []string {
+func (p *Parser) Errors() ErrorList {
 	return p.errors
 }
 
 func (p *Parser) parseStatement() (statement, string) {
-
 	var stmt statement
 
 	if p.curToken.IsStatementDelim() {
@@ -120,10 +135,14 @@ func (p *Parser) parseStatement() (statement, string) {
 				AppendLine: p.curToken.Literal,
 			}
 		case "b":
-			p.expectPeek(token.IDENT)
+			branchIdent := "$" // TODO: Find better way to signify end.
+			if p.peekTokenIs(token.IDENT) {
+				p.nextToken()
+				branchIdent = p.curToken.Literal
+			}
 			stmt = &bStmt{
 				addresser:   addr,
-				BranchIdent: p.curToken.Literal,
+				BranchIdent: branchIdent,
 			}
 		case "c":
 			p.expectPeek(token.BACKSLASH)
@@ -316,10 +335,19 @@ func (p *Parser) parseAddress() addresser {
 	case token.COMMA:
 		p.nextToken()
 		addr2 := p.parseAddressPart()
-		return &rangeAddress{Addr1: addr1, Addr2: addr2}
+		rangeAddr := &rangeAddress{Addr1: addr1, Addr2: addr2}
+		if p.curToken.Type == token.EXPLMARK {
+			p.nextToken()
+			return &notAddr{Addr: rangeAddr}
+		}
+		return rangeAddr
+	case token.EXPLMARK:
+		p.nextToken()
+		return &notAddr{Addr: addr1}
 	default:
 		p.unexpectedTokenError()
 	}
+
 	return nil
 }
 
@@ -380,17 +408,30 @@ func (p *Parser) parseAddressPart() addresser {
 	var addr addresser
 	switch p.curToken.Type {
 	case token.SLASH:
-		if !p.expectPeek(token.LIT) {
+		if !p.peekTokenIs(token.LIT) {
+			// Could be a blank literal
+			if p.peekTokenIs(token.SLASH) {
+				p.nextToken()
+				regex := regexp.MustCompile("")
+				addr = &regexpAddr{Regexp: regex}
+				break
+			}
 			return nil
 		}
+		p.nextToken()
+
 		lit := p.curToken.Literal
 		if !p.expectPeek(token.SLASH) {
 			return nil
 		}
 		// TODO: Should have own form of regexp
 		lit = translateLiteral(lit)
-		regexp := regexp.MustCompile(lit)
-		addr = &regexpAddr{Regexp: regexp}
+		regex, err := regexp.Compile(lit)
+		if err != nil {
+			regex = regexp.MustCompile(".*")
+		}
+
+		addr = &regexpAddr{Regexp: regex}
 	case token.INT:
 		i, err := strconv.Atoi(p.curToken.Literal)
 		if err != nil {
@@ -424,18 +465,22 @@ func (p *Parser) expectPeek(t token.Type) bool {
 	return false
 }
 
+func (p *Parser) lineNumber() int {
+	return p.lineCt + 1
+}
+
 func (p *Parser) peekError(t token.Type) {
-	msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
+	msg := fmt.Sprintf("line %d: expected next token to be %s, got %s instead", p.lineNumber(), t, p.peekToken.Type)
 	p.errors = append(p.errors, msg)
 }
 
 func (p *Parser) unexpectedTokenError() {
-	msg := fmt.Sprintf("unexpected token type %s", p.curToken.Type)
+	msg := fmt.Sprintf("line %d: unexpected token type %s", p.lineNumber(), p.curToken.Type)
 	p.errors = append(p.errors, msg)
 }
 
 func (p *Parser) unexpectedFlagError(f rune) {
-	msg := fmt.Sprintf("unexpected flag type %v", f)
+	msg := fmt.Sprintf("line %d: unexpected flag type %v", p.lineNumber(), f)
 	p.errors = append(p.errors, msg)
 }
 
