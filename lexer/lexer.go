@@ -3,9 +3,12 @@ package lexer
 import (
 	"bytes"
 	"errors"
+	"fmt"
 
 	"github.com/zkry/go-sed/token"
 )
+
+// I should probably rewrite this.
 
 type state string
 
@@ -93,50 +96,50 @@ func (l *Lexer) NextToken() token.Token {
 		return tok
 	}
 
-	// fmt.Printf("%c: ", l.ch)
+	fmt.Printf("%c: ", l.ch)
 
 	switch l.s {
 	case stateStart:
-		// fmt.Println("START")
+		fmt.Println("START")
 		tok = l.lexStart()
 	case stateAddr:
-		// fmt.Println("ADDR")
+		fmt.Println("ADDR")
 		tok = l.lexAddr()
 	case stateEndAddr:
-		// fmt.Println("ADDR_END")
+		fmt.Println("ADDR_END")
 		tok = l.lexEndAddr()
 	case stateLabel:
-		// fmt.Println("LABEL")
+		fmt.Println("LABEL")
 		tok = l.lexLabel()
 	case state2ndAddrStart:
-		// fmt.Println("ADDR2_START")
+		fmt.Println("ADDR2_START")
 		tok = l.lex2ndAddrStart()
 	case state2ndAddr:
-		// fmt.Println("ADDR2")
+		fmt.Println("ADDR2")
 		tok = l.lex2ndAddr()
 	case stateEnd2ndAddr:
-		// fmt.Println("ADDR2_END")
+		fmt.Println("ADDR2_END")
 		tok = l.lexEnd2ndAddr()
 	case stateCmd:
-		// fmt.Println("CMD")
+		fmt.Println("CMD")
 		tok = l.lexCmd()
 	case stateFindPtn:
-		// fmt.Println("FIND")
+		fmt.Println("FIND")
 		tok = l.lexFind()
 	case stateReplacePtn:
-		// fmt.Println("REPLACE")
+		fmt.Println("REPLACE")
 		tok = l.lexReplace()
 	case stateFlags:
-		// fmt.Println("FLAG")
+		fmt.Println("FLAG")
 		tok = l.lexFlag()
 	case statePostFlag:
-		// fmt.Println("POST_FLAG")
+		fmt.Println("POST_FLAG")
 		tok = l.lexPostFlag()
 	case stateReadline:
-		// fmt.Println("READ_LINE")
+		fmt.Println("READ_LINE")
 		tok = l.lexReadLine()
 	default:
-		// fmt.Println("NOT COVERED")
+		fmt.Println("NOT COVERED")
 	}
 
 	l.readChar()
@@ -197,7 +200,8 @@ func (l *Lexer) lexPostFlag() token.Token {
 		tok = newToken(token.NEWLINE, l.ch)
 		l.s = stateStart
 	case ';':
-		// TODO: ; separated commands
+		tok = newToken(token.SEMICOLON, l.ch)
+		l.s = stateStart
 	default:
 		if l.ch == ' ' {
 			l.readUntil(isSpace)
@@ -218,14 +222,20 @@ func (l *Lexer) lexFlag() token.Token {
 	l.readUntil(isSpace)
 	switch l.ch {
 	case ';':
+		fmt.Println("lexFlag ;")
+		// l.readChar()
 		tok = newToken(token.SEMICOLON, l.ch)
 		l.s = stateStart
 	case '\n':
+		fmt.Println("lexFlag \\n")
 		tok = newToken(token.NEWLINE, l.ch)
 		l.s = stateStart
 	case ' ':
+		fmt.Println("lexFlag ' '")
+		// l.readUntil(func(b byte) bool { return b != ';' })
 		l.s = statePostFlag
 	default:
+		fmt.Println("lexFlag DEFAULT")
 		if isLetter(l.ch) || isNumber(l.ch) {
 			tok = newToken(token.IDENT, l.ch)
 			if l.ch == 'r' || l.ch == 'w' {
@@ -246,7 +256,33 @@ func (l *Lexer) lexReplace() token.Token {
 		tok = newToken(token.DIV, l.ch)
 		l.s = stateFlags
 	default:
-		tok.Literal = l.readUntil(func(b byte) bool { return b != l.div })
+		var lit string
+	replace_repeat:
+		fmt.Println("\n\n->")
+		// The way the readUntil function was suppost to work was it should stop before
+		// the character the function tell it to stop at. The problem arrises when the
+		// first character is the character that it should stop at, in which case it dones't
+		// move at all... which opend a huge can of worms.
+		if l.ch == '\\' {
+			fmt.Println("first")
+			l.readChar()
+			if l.ch != '\n' {
+				lit += "\\"
+			}
+			goto replace_repeat
+		}
+		lit += l.readUntil(func(b byte) bool { return b != l.div && b != '\\' })
+		if l.ch == '\\' {
+			fmt.Println("last")
+			l.readChar()
+			l.readChar()
+			if l.ch != '\n' {
+				lit += "\\"
+			}
+			goto replace_repeat
+		}
+		fmt.Println("done")
+		tok.Literal = lit
 		tok.Type = token.LIT
 	}
 	return tok

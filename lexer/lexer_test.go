@@ -13,7 +13,7 @@ func TestNextToken(t *testing.T) {
 			gotTok := l.NextToken()
 
 			if gotTok.Type != et.Type {
-				t.Fatalf("Program[%d]:%s line[%d] - tokentype wrong. expected=%v, got=%v", i, lt.program, j, et.Type, gotTok.Type)
+				t.Errorf("Program[%d]:%s line[%d] - tokentype wrong. expected=%v, got=%v", i, lt.program, j, et.Type, gotTok.Type)
 			}
 
 			if gotTok.Literal != et.Literal {
@@ -1260,6 +1260,67 @@ a \
 			token.Token{Type: token.DIV, Literal: "/"},
 			token.Token{Type: token.LIT, Literal: "\n|--------|\n|        |\n|        |\n|--------|"},
 			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.EOF, Literal: ""},
+		},
+	},
+	{
+		program: `
+  /^t3$/{ s/.*/\
+ TEST 3 - 3\
+      _____________ \
+     |     ==      |\
+     |     ==      |\
+     |    ==  =    |\
+     |     = ==    |\
+     |  =o         |\
+     |  ==         |\
+     |             |\
+     |.____________|\
+   / ; b endmap
+  }`,
+		expected: []token.Token{
+			token.Token{Type: token.NEWLINE, Literal: "\n"},
+			token.Token{Type: token.SLASH, Literal: "/"},
+			token.Token{Type: token.LIT, Literal: "^t3$"},
+			token.Token{Type: token.SLASH, Literal: "/"},
+			token.Token{Type: token.LBRACE, Literal: "{"},
+			token.Token{Type: token.CMD, Literal: "s"},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.LIT, Literal: ".*"},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.LIT, Literal: `
+ TEST 3 - 3
+      _____________ 
+     |     ==      |
+     |     ==      |
+     |    ==  =    |
+     |     = ==    |
+     |  =o         |
+     |  ==         |
+     |             |
+     |.____________|
+   `},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.SEMICOLON, Literal: ";"},
+			// Fix random semicolon insertion
+			token.Token{Type: token.SEMICOLON, Literal: ";"},
+			token.Token{Type: token.CMD, Literal: "b"},
+			token.Token{Type: token.IDENT, Literal: "endmap"},
+			token.Token{Type: token.NEWLINE, Literal: "\n"},
+			token.Token{Type: token.RBRACE, Literal: "}"},
+			token.Token{Type: token.EOF, Literal: ""},
+		},
+	},
+	{
+		program: `s/\\\\/\\/g`,
+		expected: []token.Token{
+			token.Token{Type: token.CMD, Literal: "s"},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.LIT, Literal: `\\\\`},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.LIT, Literal: `\\`},
+			token.Token{Type: token.DIV, Literal: "/"},
+			token.Token{Type: token.IDENT, Literal: "g"},
 			token.Token{Type: token.EOF, Literal: ""},
 		},
 	},
