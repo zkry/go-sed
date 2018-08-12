@@ -52,3 +52,7 @@ func (t Token) IsStatementDelim() bool {
 		t.Type == EOF ||
 		t.Type == SEMICOLON
 }
+
+func (t Token) String() string {
+	return "[" + string(t.Type) + "] " + t.Literal
+}

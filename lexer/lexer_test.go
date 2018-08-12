@@ -1,12 +1,150 @@
 package lexer
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/zkry/go-sed/token"
 )
 
-func TestNextToken(t *testing.T) {
+func TestReadChar(t *testing.T) {
+	cases := []struct {
+		title            string
+		program          string
+		readCharCt       int
+		expCh, expPrevCh rune
+	}{
+		{
+			title:      "Basic test of read char",
+			program:    "/addr/s/one/two/g",
+			readCharCt: 5,
+			expCh:      '/',
+			expPrevCh:  'r',
+		},
+		{
+			title:      "Test starting conditions",
+			program:    "/addr/s/one/two/g",
+			readCharCt: 0,
+			expCh:      '/',
+			expPrevCh:  0,
+		},
+		{
+			title:      "Test reading past last character",
+			program:    "123",
+			readCharCt: 3,
+			expCh:      0,
+			expPrevCh:  '3',
+		},
+	}
+
+	for i, c := range cases {
+		l := New(c.program)
+		for j := 0; j < c.readCharCt; j++ {
+			l.readChar()
+		}
+		if l.ch != c.expCh || l.prevCh != c.expPrevCh {
+			t.Errorf("Test %d (%s) failed.\n  exp ch=%v, got %v\n  exp prevCh=%v, got %v\n",
+				i, c.title, c.expCh, l.ch, c.expPrevCh, l.prevCh)
+		}
+	}
+}
+
+func TestReadUntil(t *testing.T) {
+	cases := []struct {
+		title            string
+		preReadChar      int
+		program          string
+		toFunc           func(rune) bool
+		expCh, expPrevCh rune
+		expRes           string
+	}{
+		{
+			title:       "Reading until the next /",
+			program:     "one two three/",
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   'e',
+			expRes:      "one two three",
+		},
+		{
+			title:       "Reading until the next / between / /",
+			program:     "/one two three/",
+			preReadChar: 1,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   'e',
+			expRes:      "one two three",
+		},
+		{
+			title:       "Reading starting of on the symbol reading to",
+			program:     "/one two three/",
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   0,
+			expRes:      "",
+		},
+		{
+			title:       "Escapeing the toFunc",
+			program:     "one \\/two \\/three/",
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   'e',
+			expRes:      `one /two /three`,
+		},
+		{
+			title:       "The end is never found",
+			program:     "one two three four ...",
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       0,
+			expPrevCh:   '.',
+			expRes:      `one two three four ...`,
+		},
+		{
+			title:       "Escaping the very end?",
+			program:     "one two three four ...\\",
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       0,
+			expPrevCh:   '\\',
+			expRes:      `one two three four ...\`,
+		},
+		{
+			title:       "Escaping escape chars",
+			program:     `\\ \\ \\/this shouldn't be returned`,
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   '\\',
+			expRes:      `\\ \\ \\`,
+		},
+		{
+			title:       "Escaping escape chars",
+			program:     `one two \ three/`,
+			preReadChar: 0,
+			toFunc:      func(r rune) bool { return r == '/' },
+			expCh:       '/',
+			expPrevCh:   'e',
+			expRes:      `one two \ three`,
+		},
+	}
+
+	for i, c := range cases {
+		l := New(c.program)
+		for j := 0; j < c.preReadChar; j++ {
+			l.readChar()
+		}
+		res := l.readUntilEscape(c.toFunc)
+		if l.ch != c.expCh || l.prevCh != c.expPrevCh || res != c.expRes {
+			t.Errorf("Test %d (%s) failed.\n  exp res='%v', got='%v'\n  exp ch=%v(%c), got=%v(%c)\n  exp prevCh=%v(%c), got=%v(%c)\n", i, c.title, c.expRes, res, c.expCh, c.expCh, l.ch, l.ch, c.expPrevCh, c.expPrevCh, l.prevCh, l.prevCh)
+		}
+	}
+}
+
+func TestNextTokens(t *testing.T) {
 	for i, lt := range lexerTests {
 		l := New(lt.program)
 		for j, et := range lt.expected {
@@ -21,6 +159,47 @@ func TestNextToken(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestNextToken(t *testing.T) {
+	cases := []struct {
+		t      string
+		prg    string
+		s      state
+		expTok token.Token
+		expCh  rune
+	}{
+		{t: "simple start", prg: "s/one/two/g", s: stateStart, expTok: tok(token.CMD, "s"), expCh: '/'},
+		{t: "space at beginning", prg: "    s/one/two/g", s: stateStart, expTok: tok(token.CMD, "s"), expCh: '/'},
+		{t: "addr at beginning", prg: "    /addr/s/one/two/g", s: stateStart, expTok: tok(token.SLASH, "/"), expCh: 'a'},
+		{t: "blank addr at beginning", prg: "    //s/one/two/g", s: stateStart, expTok: tok(token.SLASH, "/"), expCh: '/'},
+		{t: "Escape address", prg: `\s\ss,\s\sss\ss\s\ss`, s: stateStart, expTok: tok(token.SLASH, "s"), expCh: '\\'},
+		{t: "Number at start", prg: "123,$s/a/b/", s: stateStart, expTok: tok(token.INT, "123"), expCh: ','},
+		{t: "Illegal at start", prg: "***", s: stateStart, expTok: tok(token.ILLEGAL, "*"), expCh: '*'},
+	}
+
+	for i, c := range cases {
+		fmt.Println("------")
+		lexer := New(c.prg)
+		lexer.s = c.s
+		gotToken := lexer.NextToken()
+		fmt.Printf("->'%c'\n", lexer.ch)
+
+		if !tokEqu(gotToken, c.expTok) {
+			t.Errorf("Test %d (%s) incorrect token:\n  Expected: %v, got: %v\n", i, c.t, gotToken, c.expTok)
+		}
+		if lexer.ch != c.expCh {
+			t.Errorf("Test %d (%s) incorrect subsequent position:\n  Expected: %v(%c), got: %v(%c)\n", i, c.t, c.expCh, c.expCh, lexer.ch, lexer.ch)
+		}
+	}
+}
+
+func tok(t token.Type, l string) token.Token {
+	return token.Token{Type: t, Literal: l}
+}
+
+func tokEqu(t1, t2 token.Token) bool {
+	return t1.Type == t2.Type && t1.Literal == t2.Literal
 }
 
 var lexerTests = []struct {
@@ -1321,6 +1500,29 @@ a \
 			token.Token{Type: token.LIT, Literal: `\\`},
 			token.Token{Type: token.DIV, Literal: "/"},
 			token.Token{Type: token.IDENT, Literal: "g"},
+			token.Token{Type: token.EOF, Literal: ""},
+		},
+	},
+	{
+		program: `\s\ss,\s\ssss\ss\s\sswsss`,
+		expected: []token.Token{
+			token.Token{Type: token.SLASH, Literal: "s"},
+			token.Token{Type: token.SLASH, Literal: "s"},
+			token.Token{Type: token.SEMICOLON, Literal: ";"},
+			token.Token{Type: token.SLASH, Literal: "s"},
+			token.Token{Type: token.SLASH, Literal: "s"},
+
+			token.Token{Type: token.CMD, Literal: "s"},
+
+			token.Token{Type: token.DIV, Literal: "s"},
+			token.Token{Type: token.LIT, Literal: "s"},
+			token.Token{Type: token.DIV, Literal: "s"},
+			token.Token{Type: token.LIT, Literal: "ss"},
+			token.Token{Type: token.DIV, Literal: "s"},
+
+			token.Token{Type: token.IDENT, Literal: "w"},
+			token.Token{Type: token.IDENT, Literal: "sss"},
+
 			token.Token{Type: token.EOF, Literal: ""},
 		},
 	},
