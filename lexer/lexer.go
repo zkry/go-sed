@@ -165,7 +165,7 @@ func newToken(t token.Type, r rune) token.Token {
 	return token.Token{Type: t, Literal: string(r)}
 }
 
-const debug = false
+const debug = true
 
 // NextToken takes the character that the Lexer is at
 // and returns a corresponding token, then increments Lexer
@@ -323,9 +323,27 @@ func (l *Lexer) lex2ndAddr() token.Token {
 }
 
 func (l *Lexer) lexEndAddr() token.Token {
-	return token.Token{}
+	if l.ch != l.addrDiv {
+		return newToken(token.ILLEGAL, l.ch)
+	}
+
+	tok := newToken(token.SLASH, l.ch)
+
+	l.readChar()
+	return tok
 }
 
 func (l *Lexer) lexAddr() token.Token {
-	return token.Token{}
+	fmt.Println("Lexing addr")
+
+	var tok token.Token
+	tok.Literal = l.readUntil(func(r rune) bool {
+		return r == l.addrDiv
+	})
+	tok.Type = token.LIT
+
+	l.s = stateEndAddr
+
+	fmt.Println("Literal is: ", tok.Literal)
+	return tok
 }
