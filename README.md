@@ -1,3 +1,5 @@
+### NOTE: This is a work in progress and is currently not in a functional state as the lexer is going through a complete rewrite.
+
 # go-sed
 A sed implementation in Go.
 
