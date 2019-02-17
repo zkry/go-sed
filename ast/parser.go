@@ -7,25 +7,25 @@ import (
 	"strconv"
 
 	"github.com/zkry/go-sed/lexer"
-	"github.com/zkry/go-sed/token"
 )
 
 type Parser struct {
 	l *lexer.Lexer
+	i chan lexer.Item
 
-	curToken  token.Token
-	peekToken token.Token
+	curToken  lexer.Item
+	peekToken lexer.Item
 
 	lineCt int
 	errors []string
-	tokens []token.Token
+	tokens []lexer.Item
 }
 
-func New(l *lexer.Lexer) *Parser {
+func New(input string) *Parser {
 	p := &Parser{
-		l:      l,
 		errors: []string{},
 	}
+	p.l, p.i = lexer.New(input)
 
 	p.nextToken()
 	p.nextToken()
@@ -34,10 +34,10 @@ func New(l *lexer.Lexer) *Parser {
 
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
-	p.peekToken = p.l.NextToken()
+	p.peekToken = <-p.i // TODO: Make the next token always be EOF
 
 	// Specail next token logic here.
-	if p.curTokenIs(token.NEWLINE) {
+	if p.curTokenIs(lexer.ItemNewline) {
 		p.lineCt++
 	}
 
@@ -52,7 +52,7 @@ func (p *Parser) ParseProgram() *Program {
 
 	program.Statements = []statement{}
 
-	for p.curToken.Type != token.EOF {
+	for p.curToken.Type != lexer.ItemEOF {
 		stmt, label := p.parseStatement()
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
@@ -62,7 +62,7 @@ func (p *Parser) ParseProgram() *Program {
 		}
 		p.nextToken()
 	}
-	program.Tokens = make([]token.Token, len(p.tokens))
+	program.Tokens = make([]lexer.Item, len(p.tokens))
 	copy(program.Tokens, p.tokens)
 	return program
 }
@@ -85,15 +85,15 @@ func (p *Parser) Errors() ErrorList {
 func (p *Parser) parseStatement() (statement, string) {
 	var stmt statement
 
-	if p.curToken.IsStatementDelim() {
+	if isStatementDelim(p.curToken.Type) {
 		return nil, ""
 	}
 
-	if p.curTokenIs(token.COLON) {
-		if !p.expectPeek(token.IDENT) {
+	if p.curTokenIs(lexer.ItemColon) {
+		if !p.expectPeek(lexer.ItemIdent) {
 			return nil, ""
 		}
-		lit := p.curToken.Literal
+		lit := p.curToken.Value
 		// Check if valid literal
 		if lit == "" {
 			p.customError("invalid label name")
@@ -105,13 +105,13 @@ func (p *Parser) parseStatement() (statement, string) {
 	addr := p.parseAddress()
 
 	switch p.curToken.Type {
-	case token.LBRACE:
+	case lexer.ItemLBrace:
 		// Start block
 		p.nextToken()
 		block := &Program{}
 		block.Statements = []statement{}
 		block.Labels = map[string]int{}
-		for p.curToken.Type != token.EOF && p.curToken.Type != token.RBRACE {
+		for p.curToken.Type != lexer.ItemEOF && p.curToken.Type != lexer.ItemRBrace {
 			stmt, l := p.parseStatement()
 			if stmt != nil {
 				block.Statements = append(block.Statements, stmt)
@@ -125,31 +125,31 @@ func (p *Parser) parseStatement() (statement, string) {
 			Code:      block,
 			addresser: addr,
 		}
-	case token.CMD:
-		switch p.curToken.Literal {
+	case lexer.ItemCmd:
+		switch p.curToken.Value {
 		case "a":
-			p.expectPeek(token.BACKSLASH)
-			p.expectPeek(token.LIT)
+			p.expectPeek(lexer.ItemBackslash)
+			p.expectPeek(lexer.ItemLit)
 			stmt = &aStmt{
 				addresser:  addr,
-				AppendLine: p.curToken.Literal,
+				AppendLine: p.curToken.Value,
 			}
 		case "b":
 			branchIdent := "$" // TODO: Find better way to signify end.
-			if p.peekTokenIs(token.IDENT) {
+			if p.peekTokenIs(lexer.ItemIdent) {
 				p.nextToken()
-				branchIdent = p.curToken.Literal
+				branchIdent = p.curToken.Value
 			}
 			stmt = &bStmt{
 				addresser:   addr,
 				BranchIdent: branchIdent,
 			}
 		case "c":
-			p.expectPeek(token.BACKSLASH)
-			p.expectPeek(token.LIT)
+			p.expectPeek(lexer.ItemBackslash)
+			p.expectPeek(lexer.ItemLit)
 			stmt = &cStmt{
 				addresser:  addr,
-				ChangeLine: p.curToken.Literal,
+				ChangeLine: p.curToken.Value,
 			}
 		case "d":
 			stmt = &dStmt{
@@ -163,7 +163,7 @@ func (p *Parser) parseStatement() (statement, string) {
 			// cmd := ""
 			// if p.peekTokenIs(token.LIT) {
 			// 	p.expectPeek(token.LIT)
-			// 	cmd = p.curToken.Literal
+			// 	cmd = p.curToken.Value
 			// }
 			// stmt = &EStmt{
 			// 	Addresser: addr,
@@ -187,11 +187,11 @@ func (p *Parser) parseStatement() (statement, string) {
 				addresser: addr,
 			}
 		case "i":
-			p.expectPeek(token.BACKSLASH)
-			p.expectPeek(token.LIT)
+			p.expectPeek(lexer.ItemBackslash)
+			p.expectPeek(lexer.ItemLit)
 			stmt = &iStmt{
 				addresser:  addr,
-				InsertLine: p.curToken.Literal,
+				InsertLine: p.curToken.Value,
 			}
 		case "l":
 			stmt = &lStmt{
@@ -218,34 +218,34 @@ func (p *Parser) parseStatement() (statement, string) {
 				addresser: addr,
 			}
 		case "r":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &rStmt{
 				addresser: addr,
-				FileName:  p.curToken.Literal,
+				FileName:  p.curToken.Value,
 			}
 		case "R":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &r2Stmt{
 				addresser: addr,
-				FileName:  p.curToken.Literal,
+				FileName:  p.curToken.Value,
 			}
 		case "s":
 			fa := ""
 			ra := ""
 			var fl sFlags
-			p.expectPeek(token.DIV)
-			if p.peekTokenIs(token.LIT) {
-				p.expectPeek(token.LIT)
-				fa = p.curToken.Literal
+			p.expectPeek(lexer.ItemDiv)
+			if p.peekTokenIs(lexer.ItemLit) {
+				p.expectPeek(lexer.ItemLit)
+				fa = p.curToken.Value
 			}
-			p.expectPeek(token.DIV)
-			if p.peekTokenIs(token.LIT) {
-				p.expectPeek(token.LIT)
-				ra = p.curToken.Literal
+			p.expectPeek(lexer.ItemDiv)
+			if p.peekTokenIs(lexer.ItemLit) {
+				p.expectPeek(lexer.ItemLit)
+				ra = p.curToken.Value
 			}
-			p.expectPeek(token.DIV)
-			if p.peekTokenIs(token.IDENT) {
-				p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemDiv)
+			if p.peekTokenIs(lexer.ItemIdent) {
+				p.expectPeek(lexer.ItemIdent)
 				fl = *p.parseFlags()
 			}
 			stmt = &sStmt{
@@ -255,42 +255,42 @@ func (p *Parser) parseStatement() (statement, string) {
 				Flags:       fl,
 			}
 		case "t":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &tStmt{
 				addresser:   addr,
-				BranchIdent: p.curToken.Literal,
+				BranchIdent: p.curToken.Value,
 			}
 		case "T":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &t2Stmt{
 				addresser: addr,
-				FileName:  p.curToken.Literal,
+				FileName:  p.curToken.Value,
 			}
 		case "v":
 		case "w":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &wStmt{
 				addresser: addr,
-				FileName:  p.curToken.Literal,
+				FileName:  p.curToken.Value,
 			}
 		case "W":
-			p.expectPeek(token.IDENT)
+			p.expectPeek(lexer.ItemIdent)
 			stmt = &w2Stmt{
 				addresser: addr,
-				FileName:  p.curToken.Literal,
+				FileName:  p.curToken.Value,
 			}
 		case "x":
 			stmt = &xStmt{
 				addresser: addr,
 			}
 		case "y":
-			p.expectPeek(token.DIV)
-			p.expectPeek(token.LIT)
-			fa := p.curToken.Literal
-			p.expectPeek(token.DIV)
-			p.expectPeek(token.LIT)
-			ra := p.curToken.Literal
-			p.expectPeek(token.DIV)
+			p.expectPeek(lexer.ItemDiv)
+			p.expectPeek(lexer.ItemLit)
+			fa := p.curToken.Value
+			p.expectPeek(lexer.ItemDiv)
+			p.expectPeek(lexer.ItemLit)
+			ra := p.curToken.Value
+			p.expectPeek(lexer.ItemDiv)
 
 			var err error
 			stmt, err = newYStmt(fa, ra, addr)
@@ -311,7 +311,7 @@ func (p *Parser) parseStatement() (statement, string) {
 	}
 
 	p.nextToken()
-	if !p.curToken.IsStatementDelim() {
+	if !isStatementDelim(p.curToken.Type) {
 		p.unexpectedTokenError()
 	}
 
@@ -319,7 +319,7 @@ func (p *Parser) parseStatement() (statement, string) {
 }
 
 func (p *Parser) parseAddress() addresser {
-	if p.curTokenIs(token.CMD) {
+	if p.curTokenIs(lexer.ItemCmd) {
 		return &blankAddress{}
 	}
 
@@ -328,20 +328,20 @@ func (p *Parser) parseAddress() addresser {
 		return nil
 	}
 	switch p.curToken.Type {
-	case token.CMD:
+	case lexer.ItemCmd:
 		return addr1
-	case token.LBRACE:
+	case lexer.ItemLBrace:
 		return addr1
-	case token.COMMA:
+	case lexer.ItemComma:
 		p.nextToken()
 		addr2 := p.parseAddressPart()
 		rangeAddr := &rangeAddress{Addr1: addr1, Addr2: addr2}
-		if p.curToken.Type == token.EXPLMARK {
+		if p.curToken.Type == lexer.ItemExpMark {
 			p.nextToken()
 			return &notAddr{Addr: rangeAddr}
 		}
 		return rangeAddr
-	case token.EXPLMARK:
+	case lexer.ItemExpMark:
 		p.nextToken()
 		return &notAddr{Addr: addr1}
 	default:
@@ -354,21 +354,21 @@ func (p *Parser) parseAddress() addresser {
 func (p *Parser) parseFlags() *sFlags {
 	flg := &sFlags{}
 	for {
-		if p.curToken.Literal[0] >= '1' && p.curToken.Literal[0] <= '9' {
-			flg.NFlag = int(p.curToken.Literal[0] - '0')
-		} else if p.curToken.Literal == "g" {
+		if p.curToken.Value[0] >= '1' && p.curToken.Value[0] <= '9' {
+			flg.NFlag = int(p.curToken.Value[0] - '0')
+		} else if p.curToken.Value == "g" {
 			flg.GFlag = true
-		} else if p.curToken.Literal == "p" {
+		} else if p.curToken.Value == "p" {
 			flg.PFlag = true
-		} else if p.curToken.Literal == "w" {
-			if p.expectPeek(token.IDENT) {
-				flg.WFile = p.curToken.Literal
+		} else if p.curToken.Value == "w" {
+			if p.expectPeek(lexer.ItemIdent) {
+				flg.WFile = p.curToken.Value
 			} else {
 				p.unexpectedTokenError()
 			}
 			return flg // No more flags after this.
 		}
-		if !p.peekTokenIs(token.IDENT) {
+		if !p.peekTokenIs(lexer.ItemIdent) {
 			return flg
 		}
 		p.nextToken()
@@ -407,10 +407,10 @@ func translateLiteral(l string) string {
 func (p *Parser) parseAddressPart() addresser {
 	var addr addresser
 	switch p.curToken.Type {
-	case token.SLASH:
-		if !p.peekTokenIs(token.LIT) {
+	case lexer.ItemSlash:
+		if !p.peekTokenIs(lexer.ItemLit) {
 			// Could be a blank literal
-			if p.peekTokenIs(token.SLASH) {
+			if p.peekTokenIs(lexer.ItemSlash) {
 				p.nextToken()
 				regex := regexp.MustCompile("")
 				addr = &regexpAddr{Regexp: regex}
@@ -420,8 +420,8 @@ func (p *Parser) parseAddressPart() addresser {
 		}
 		p.nextToken()
 
-		lit := p.curToken.Literal
-		if !p.expectPeek(token.SLASH) {
+		lit := p.curToken.Value
+		if !p.expectPeek(lexer.ItemSlash) {
 			return nil
 		}
 		// TODO: Should have own form of regexp
@@ -432,14 +432,14 @@ func (p *Parser) parseAddressPart() addresser {
 		}
 
 		addr = &regexpAddr{Regexp: regex}
-	case token.INT:
-		i, err := strconv.Atoi(p.curToken.Literal)
+	case lexer.ItemInt:
+		i, err := strconv.Atoi(p.curToken.Value)
 		if err != nil {
 			// TODO: Have a better way of doing error handling
 			panic(err)
 		}
 		addr = &lineNoAddr{LineNo: i}
-	case token.DOLLAR:
+	case lexer.ItemDollar:
 		addr = &eofAddr{}
 	default:
 		p.unexpectedTokenError()
@@ -448,15 +448,15 @@ func (p *Parser) parseAddressPart() addresser {
 	return addr
 }
 
-func (p *Parser) curTokenIs(t token.Type) bool {
+func (p *Parser) curTokenIs(t lexer.ItemType) bool {
 	return p.curToken.Type == t
 }
 
-func (p *Parser) peekTokenIs(t token.Type) bool {
+func (p *Parser) peekTokenIs(t lexer.ItemType) bool {
 	return p.peekToken.Type == t
 }
 
-func (p *Parser) expectPeek(t token.Type) bool {
+func (p *Parser) expectPeek(t lexer.ItemType) bool {
 	if p.peekTokenIs(t) {
 		p.nextToken()
 		return true
@@ -469,7 +469,7 @@ func (p *Parser) lineNumber() int {
 	return p.lineCt + 1
 }
 
-func (p *Parser) peekError(t token.Type) {
+func (p *Parser) peekError(t lexer.ItemType) {
 	msg := fmt.Sprintf("line %d: expected next token to be %s, got %s instead", p.lineNumber(), t, p.peekToken.Type)
 	p.errors = append(p.errors, msg)
 }
@@ -486,4 +486,8 @@ func (p *Parser) unexpectedFlagError(f rune) {
 
 func (p *Parser) customError(f string) {
 	p.errors = append(p.errors, f)
+}
+
+func isStatementDelim(t lexer.ItemType) bool {
+	return t == lexer.ItemNewline || t == lexer.ItemEOF || t == lexer.ItemSemicolon
 }

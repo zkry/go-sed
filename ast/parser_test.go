@@ -3,8 +3,6 @@ package ast
 import (
 	"fmt"
 	"testing"
-
-	"github.com/zkry/go-sed/lexer"
 )
 
 func TestStatement(t *testing.T) {
@@ -21,7 +19,7 @@ func TestStatement(t *testing.T) {
 		{program: "a\\\ntext", isError: false},
 		{program: "a text", isError: true},
 		{program: "btext", isError: false},
-		{program: "b", isError: true},
+		{program: "b", isError: false},
 		{program: "c\\\ntext", isError: false},
 		{program: "/addr/d", isError: false},
 		{program: "/a/,/b/ d", isError: false},
@@ -48,8 +46,7 @@ func TestStatement(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		l := lexer.New(test.program)
-		p := New(l)
+		p := New(test.program)
 		_, _ = p.parseStatement()
 		if len(p.Errors()) > 0 && !test.isError {
 			t.Errorf("Stmt [%d] %s failed: expected no error, got %v\n", i, test.program, p.Errors())
@@ -87,17 +84,11 @@ func TestParse(t *testing.T) {
 		{program: "/quit_now/q", isError: false},
 	}
 	for i, test := range tests {
-		l := lexer.New(test.program)
-		p := New(l)
+		p := New(test.program)
 		_ = p.ParseProgram()
 		if !test.isError && len(p.errors) > 0 {
 			t.Errorf("Program [%d] %s expected no errors but got: %v", i, test.program, p.errors)
 		}
-		// if test.ast != nil {
-		// 	if !cmp.Equal(ast, test.ast) {
-		// 		t.Errorf("Program [%d] %s ast tree not equal to expected result", i, test.program)
-		// 	}
-		// }
 	}
 }
 
@@ -322,10 +313,13 @@ s/here/HERE/
 		fmt.Printf("\n\n=======================\n")
 		fmt.Printf("======= test %d =======\n", i)
 		fmt.Printf("=======================\n")
-		l := lexer.New(tt.program)
-		p := New(l)
+		fmt.Println("program:", tt.program)
+		fmt.Println("-----------------------")
+
+		p := New(tt.program)
 		program := p.ParseProgram()
 		if len(p.errors) > 0 {
+			fmt.Printf("ERROR: %v\n", p.errors)
 			t.Errorf("Program [%d] %s encountered errors %v", i, tt.program, p.errors)
 			continue
 		}

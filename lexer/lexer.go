@@ -1,349 +1,528 @@
 package lexer
 
 import (
-	"bytes"
 	"fmt"
+	"strings"
 	"unicode"
-
-	"github.com/zkry/go-sed/token"
+	"unicode/utf8"
 )
-
-// I should probably rewrite this.
 
 type state string
 
-const (
-	stateStart state = "START"
+var validCommands = [...]rune{
+	's', // substitute
 
-	stateLabel state = "LABEL"
+	'q', // quit
+	'd', // delete
+	'p', // print
+	'n', // next
+	'b', // branch
+	't', // test
+	'y', // transliterate chars
+	'a', // append after line
+	'i', // insert before line
+	'c', // change
+	'=', // current line number
+	'l', // list (print unambiguously)
+	'r', // read
+	'w', // write
+	'D', // delete to newline
+	'N', // next to newline
+	'P', // print to newline
+	'h', // hold pattern
+	'H', // hold to newline
+	'g', // grab hold
+	'G', // grab with newline
+	'x', // exchange hold and pattern
+}
 
-	stateAddr         state = "LITERAL"
-	stateEndAddr      state = "END_ADDR"
-	state2ndAddrStart state = "2ND_ADDR_START"
-	state2ndAddr      state = "2ND_ADDR"
-	stateEnd2ndAddr   state = "END_2ND_ADDR"
+var validGNUCommands = [...]rune{
+	'e', // execute
+	'F', // filename
+	'Q', // quit with no-print
+	'R', // queue read file
+	'T', // branch if no subs
+	'v', // version
+	'W', // write till newline
+	'z', // empty pattern space
+}
 
-	stateCmd state = "CMD" // The state after reading a command
+type stateFn func(*Lexer) stateFn
 
-	stateFindPtn    state = "FIND_PATTERN"
-	stateReplacePtn state = "REPLACE_PATTERN"
-	stateFlags      state = "FLAGS"
-	statePostFlag   state = "POST_FLAG"
-
-	stateReadline state = "READ_LINE"
-)
+type escape struct {
+	pos   int
+	width int
+}
 
 // Lexer represents the state of the lexer object
 type Lexer struct {
-	input    []rune
-	position int
-
-	ch     rune
-	prevCh rune
-
-	addrDiv rune
-	div     rune
-	s       state
-	cmd     rune
-
-	row, col int
+	name  string    // used only for error reports
+	input string    // the input that the lexer will run on
+	start int       // the start position of this item
+	pos   int       // the current position we are at
+	width int       // the width of the last rune read
+	items chan Item // the cannel to which we send our output tokens
 }
 
-func New(input string) *Lexer {
-	rr := []rune{}
-
-	for _, r := range input {
-		rr = append(rr, r)
+func New(input string) (*Lexer, chan Item) {
+	l := &Lexer{
+		name:  "Test Lexer",
+		input: input,
+		start: 0,
+		pos:   0,
+		width: -1, // we haven't read anything but startState shoudn't go back
+		items: make(chan Item),
 	}
-
-	l := &Lexer{input: rr}
-	l.readChar()
-	l.s = stateStart
-	return l
+	go l.run()
+	return l, l.items
 }
 
-func (l *Lexer) readChar() {
-	if l.ch == '\n' {
-		l.row++
-		l.col = 0
-	} else {
-		l.col++
+func (l *Lexer) run() {
+	for state := lexStart; state != nil; {
+		state = state(l)
 	}
-
-	l.prevCh = l.ch
-	if l.position >= len(l.input) {
-		l.ch = 0
-		return
-	}
-	l.ch = l.input[l.position]
-	l.position++
+	close(l.items)
 }
 
-// readUntil w
-func (l *Lexer) readUntil(toFunc func(rune) bool) string {
-	buf := bytes.Buffer{}
-	fmt.Printf("l.ch = '%c'\n", l.ch)
-	for l.ch != 0 && !toFunc(l.ch) {
-		fmt.Printf("l.ch > '%c'\n", l.ch)
-		buf.WriteRune(l.ch)
-		l.readChar()
-	}
-	fmt.Printf("l.ch = '%c'\n", l.ch)
-	return buf.String()
+func (l *Lexer) emit(t ItemType) {
+	l.items <- Item{t, l.input[l.start:l.pos], l.pos}
+	l.start = l.pos
 }
 
-func (l *Lexer) readUntilEscape(toFunc func(rune) bool) string {
-	buf := bytes.Buffer{}
-	for l.ch != 0 && !toFunc(l.ch) {
-		// Allow \ to escape the toFunc.
-		// Example, if toFunc is unicode.isDigit, allow \1 to bypass this.
-		if l.ch == '\\' {
-			l.readChar()
-			if !toFunc(l.ch) {
-				buf.WriteRune('\\')
+func (l *Lexer) escapePrev() {
+	l.input = l.input[:l.pos-l.width] + l.input[l.pos:]
+	l.pos -= l.width
+}
+
+func (l *Lexer) next() (r rune) {
+	if l.pos >= len(l.input) {
+		l.width = 0
+		return 0
+	}
+	r, l.width = utf8.DecodeRuneInString(l.input[l.pos:])
+	l.pos += l.width
+	return r
+}
+
+func (l *Lexer) ignore() {
+	l.start = l.pos
+}
+
+// backup moves the lexer back one rune. Can only be used once after
+// calling next.
+func (l *Lexer) backup() {
+	l.pos -= l.width
+}
+
+// peek returns the next rune like next() but does not move
+// the position of the lexer.
+func (l *Lexer) peek() rune {
+	rune := l.next()
+	l.backup()
+	return rune
+}
+
+// accept returns true if the next rune is in the set of valid runes.
+func (l *Lexer) accept(valid string) bool {
+	if strings.ContainsRune(valid, l.next()) {
+		return true
+	}
+	l.backup()
+	return false
+}
+
+// acceptRun accepts as much instances of a character in valid as possible.
+func (l *Lexer) acceptRun(valid string) {
+	for strings.ContainsRune(valid, l.next()) {
+	}
+	l.backup()
+}
+
+func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
+	l.items <- Item{
+		Type:  ItemError,
+		Value: fmt.Sprintf(format, args...),
+	}
+	return nil
+}
+
+func isCommand(r rune) bool {
+	for _, cmd := range validCommands {
+		if r == cmd {
+			return true
+		}
+	}
+	return false
+}
+
+func isSpace(r rune) bool {
+	return r == ' ' || r == '\t'
+}
+
+func isFlag(r rune) bool {
+	return isNumeric(r) || strings.ContainsRune("mMiIewpg1234567890r", r)
+
+}
+
+func isNumeric(r rune) bool {
+	return unicode.IsDigit(r)
+}
+
+func lexStart(l *Lexer) stateFn {
+	r := l.next()
+	switch {
+	case r == 0:
+		l.emit(ItemEOF)
+		return nil
+	case isSpace(r):
+		l.ignore()
+		return lexStart
+	case isNumeric(r):
+		l.acceptRun("0123456789")
+		l.emit(ItemInt)
+		return lexNextAddrOrCommand
+	case isCommand(r):
+		l.backup()
+		return lex2ndAddrDone
+	case r == '$':
+		l.emit(ItemDollar)
+		return lexNextAddrOrCommand
+	case r == ':':
+		l.emit(ItemColon)
+		return lexIdentToEnd
+	case r == '/':
+		l.emit(ItemSlash)
+		return lexInsideAddr('/', lexNextAddrOrCommand)
+	case r == '\n':
+		l.emit(ItemNewline)
+		return lexStart
+	case r == '\\':
+		l.ignore()
+		delim := l.next()
+		l.emit(ItemSlash)
+		return lexInsideAddr(delim, lexNextAddrOrCommand)
+	case r == ';':
+		l.emit(ItemSemicolon)
+		return lexStart
+	case r == '#':
+		l.emit(ItemNewline)
+		for {
+			switch l.next() {
+			case '\n':
+				l.ignore()
+				return lexStart
+			case 0:
+				l.ignore()
+				l.emit(ItemEOF)
+				return nil
 			}
-			if l.ch == 0 {
-				break
+		}
+	case r == '{':
+		l.emit(ItemLBrace)
+		return lexStart
+	case r == '}':
+		l.emit(ItemRBrace)
+		return lexStart
+	}
+
+	return l.errorf("no symbol found in start state")
+}
+
+// lexNextAddrOrCommand lexes the portion after the first address.
+// There could either be a command or another address portion coming.
+func lexNextAddrOrCommand(l *Lexer) stateFn {
+	for {
+		switch r := l.next(); {
+		case r == 0:
+			l.emit(ItemEOF)
+			return nil
+		case isSpace(r):
+			l.ignore()
+		case isCommand(r):
+			l.backup()
+			return lex2ndAddrDone
+		case r == '{':
+			l.emit(ItemLBrace)
+			return lexStart
+		case r == '}':
+			l.emit(ItemRBrace)
+			return lexStart
+		case r == ',':
+			l.emit(ItemComma)
+			return lex2ndAddr
+		case r == '!':
+			l.emit(ItemExpMark)
+			return lex2ndAddrDone
+		}
+	}
+}
+
+// lex2ndAddr lexes the part after a comma was received.
+func lex2ndAddr(l *Lexer) stateFn {
+	for {
+		switch r := l.next(); {
+		case r == 0:
+			l.emit(ItemEOF)
+			return nil
+		case isSpace(r):
+			l.ignore()
+		case isNumeric(r):
+			l.acceptRun("0123456789")
+			l.emit(ItemInt)
+			return lex2ndAddrDone
+		case isCommand(r):
+			l.backup()
+			return lex2ndAddrDone
+		case r == '$':
+			l.emit(ItemDollar)
+			return lex2ndAddrDone
+		case r == '\\':
+			l.ignore()
+			delim := l.next()
+			l.emit(ItemSlash)
+			return lexInsideAddr(delim, lex2ndAddrDone)
+		case r == '/':
+			l.emit(ItemSlash)
+			return lexInsideAddr('/', lex2ndAddrDone)
+		}
+	}
+}
+
+// lexInsideAddr lexes an address component (/xxx/) that is delimited
+// by 'div' and when done will return to the onComplete state.
+func lexInsideAddr(div rune, onComplete stateFn) stateFn {
+	return func(l *Lexer) stateFn {
+		for {
+			switch r := l.next(); {
+			case r == div:
+				l.backup()
+				l.emit(ItemLit)
+				l.next()
+				l.emit(ItemSlash)
+				return onComplete
+			case r == '\\':
+				// Escape the div
+				if l.peek() == div {
+					l.escapePrev()
+					l.next()
+				}
+				// l.escapePrev()
+				// r = l.next()
+				// if r != div {
+				// 	l.errorf("unrecognised escape character %c", r)
+				// 	return nil
+				// }
+			case r == 0:
+				l.emit(ItemEOF)
+				return nil
 			}
 		}
-		if l.ch != 0 {
-			buf.WriteRune(l.ch)
-		}
-		l.readChar()
-	}
-	return buf.String()
-}
-
-// func (l *Lexer) readWhileWithPrev(toFunc func(prev, at rune) bool) string {
-// 	start := l.position
-// 	for toFunc(l.prevCh, l.ch) && l.ch != 0 {
-// 		l.readChar()
-// 	}
-// 	return string(l.input[start:l.position])
-// }
-
-func (l *Lexer) readWhileEscape(toFunc func(rune) bool) string {
-	return l.readUntilEscape(not(toFunc))
-}
-
-func (l *Lexer) readWhile(toFunc func(rune) bool) string {
-	return l.readUntil(not(toFunc))
-}
-
-func isCmd(ch rune) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '='
-}
-
-func isAlnum(r rune) bool {
-	return unicode.IsDigit(r) || unicode.IsLetter(r)
-}
-
-// isASpace is different than unicode.IsSpace in that isASpace
-func isASpace(r rune) bool {
-	return r == ' '
-}
-
-func isNewline(r rune) bool {
-	return r == '\n'
-}
-
-func isNewCommand(r rune) bool {
-	return isNewlineOrEOF(r) || r == ';'
-}
-
-func isNewlineOrEOF(r rune) bool {
-	return r == '\n' || r == 0
-}
-
-func not(f func(r rune) bool) func(rune) bool {
-	return func(r rune) bool {
-		return !f(r)
 	}
 }
 
-func newToken(t token.Type, r rune) token.Token {
-	return token.Token{Type: t, Literal: string(r)}
-}
-
-const debug = true
-
-// NextToken takes the character that the Lexer is at
-// and returns a corresponding token, then increments Lexer
-func (l *Lexer) NextToken() token.Token {
-	var tok token.Token
-
-	startPos := l.position
-
-	// Check for the end of file
-	if l.ch == 0 {
-		tok.Literal = ""
-		tok.Type = token.EOF
-		return tok
+// lex2ndAddrDone lexes the portion that is after the 2nd address.
+// We know that no more addresses can come in
+func lex2ndAddrDone(l *Lexer) stateFn {
+	l.acceptRun(" \t")
+	l.ignore()
+	if l.accept("!") {
+		l.emit(ItemExpMark)
 	}
-
-	if debug {
-		fmt.Printf("%c: %v\n", l.ch, l.s)
-	}
-
-	switch l.s {
-	case stateStart:
-		tok = l.lexStart()
-	case stateAddr:
-		tok = l.lexAddr()
-	case stateEndAddr:
-		tok = l.lexEndAddr()
-	case stateLabel:
-		tok = l.lexLabel()
-	case state2ndAddrStart:
-		tok = l.lex2ndAddrStart()
-	case state2ndAddr:
-		tok = l.lex2ndAddr()
-	case stateEnd2ndAddr:
-		tok = l.lexEnd2ndAddr()
-	case stateCmd:
-		tok = l.lexCmd()
-	case stateFindPtn:
-		tok = l.lexFind()
-	case stateReplacePtn:
-		tok = l.lexReplace()
-	case stateFlags:
-		tok = l.lexFlag()
-	case statePostFlag:
-		tok = l.lexPostFlag()
-	case stateReadline:
-		tok = l.lexReadLine()
-	default:
-		panic("no handler for state '" + l.s + "'")
-	}
-
-	tok.Start = startPos
-	tok.End = l.position
-	return tok
-}
-
-func (l *Lexer) lexStart() token.Token {
-	// Reset state
-	l.div = '/'
-	l.addrDiv = '/'
-
-	l.readWhile(isASpace)
-
-	tok := token.Token{}
-	switch l.ch {
-	case ';':
-		tok = newToken(token.SEMICOLON, l.ch)
-		l.readChar()
-	case '#':
-		tok = newToken(token.NEWLINE, l.ch)
-		l.readUntil(isNewlineOrEOF)
-	case '\n':
-		tok = newToken(token.NEWLINE, l.ch)
-		l.readChar()
-	case '/':
-		tok = newToken(token.SLASH, l.ch)
-		l.s = stateAddr
-		l.readChar()
-	case ':':
-		tok = newToken(token.COLON, l.ch)
-		l.s = stateLabel
-		l.readChar()
-	case '$':
-		tok = newToken(token.DOLLAR, l.ch)
-		l.s = stateEndAddr
-		l.readChar()
-	case '}':
-		tok = newToken(token.RBRACE, l.ch)
-		l.readUntil(isNewCommand)
-		l.readChar()
-	case '\\':
-		l.readChar()
-		l.addrDiv = l.ch
-		l.s = stateAddr
-		tok = newToken(token.SLASH, l.ch)
-		l.readChar()
-	default:
-		if unicode.IsDigit(l.ch) {
-			tok.Literal = l.readWhile(unicode.IsDigit)
-			tok.Type = token.INT
-			l.s = stateEndAddr
-		} else if isCmd(l.ch) {
-			tok = newToken(token.CMD, l.ch)
-			l.cmd = l.ch
-			l.s = stateCmd
-			l.readChar()
-		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
-			l.readChar()
+	r := l.next()
+	if !isCommand(r) {
+		// r isn't a command but could be a brace
+		switch r {
+		case '{':
+			l.emit(ItemLBrace)
+			return lexEnd
+		case '}':
+			l.emit(ItemRBrace)
+			return lexEnd
+		default:
+			return l.errorf("expected next rune to be a command, got %c", r)
 		}
 	}
-	fmt.Printf("->'%c'\n", l.ch)
-	return tok
-}
+	l.emit(ItemCmd)
 
-func (l *Lexer) lexLabel() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexReadLine() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexPostFlag() token.Token {
-	return token.Token{}
-}
-
-// lexFlag extracts the flag portion of the s/1/2/f  pattern
-func (l *Lexer) lexFlag() token.Token {
-	return token.Token{}
-}
-
-// lexReplace extracts the second part of the s/1/2/f pattern
-func (l *Lexer) lexReplace() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexFind() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexCmd() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexEnd2ndAddr() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lex2ndAddrStart() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lex2ndAddr() token.Token {
-	return token.Token{}
-}
-
-func (l *Lexer) lexEndAddr() token.Token {
-	if l.ch != l.addrDiv {
-		return newToken(token.ILLEGAL, l.ch)
+	switch r {
+	case 's', 'y':
+		// Get divider character
+		// return clorure to that func
+		div := l.next()
+		if isSpace(div) || div == '\n' {
+			return l.errorf("can not use %c as divider for s/y commands", div)
+		}
+		l.emit(ItemDiv)
+		return parseDivExp(div)
+	case 'r', 'w', 'b', 't':
+		// get identifier, stop and ; or \n
+		l.acceptRun(" ")
+		l.ignore()
+		if r = l.next(); r == '\n' || r == ';' || r == '0' {
+			l.backup()
+			return lexEnd
+		}
+		return lexIdentToEnd
+	case 'c', 'i', 'a':
+		// commands that can take a backslash
+		l.acceptRun(" ")
+		l.ignore()
+		if l.next() != '\\' {
+			return l.errorf("c, i, and a cmds must be followed by \\")
+		}
+		l.emit(ItemBackslash)
+		if l.next() != '\n' {
+			return l.errorf("newline expected after \\ for c,i,a cmds")
+		}
+		l.ignore()
+		return lexLiteralLine
 	}
-
-	tok := newToken(token.SLASH, l.ch)
-
-	l.readChar()
-	return tok
+	return lexEnd
 }
 
-func (l *Lexer) lexAddr() token.Token {
-	fmt.Println("Lexing addr")
+func lexEnd(l *Lexer) stateFn {
+	for {
+		switch r := l.next(); {
+		case r == 0:
+			l.emit(ItemEOF)
+			return nil
+		case r == ';':
+			l.emit(ItemSemicolon)
+			return lexStart
+		case r == '\n':
+			l.emit(ItemNewline)
+			return lexStart
+		case isSpace(r):
+			l.ignore()
+		default:
+			return l.errorf("unexpected token after command '%c'", r)
+		}
+	}
+}
 
-	var tok token.Token
-	tok.Literal = l.readUntil(func(r rune) bool {
-		return r == l.addrDiv
-	})
-	tok.Type = token.LIT
+// parseDivExp parses the first term, divider, second term, divider.
+// For example with 's/123/456/', this func would handle the '123/456/' part.
+func parseDivExp(div rune) stateFn {
+	return func(l *Lexer) stateFn {
+		i := 2
+		for {
+			switch r := l.next(); {
+			case r == 0:
+				l.errorf("unexpected EOF while parsing div exp")
+			case r == '\\':
+				switch r := l.peek(); {
+				// Items that the parser wants to escape. If not, defer
+				// to regex handler
+				case r == div:
+					l.escapePrev()
+					l.next() // dont have this be seen as sending delimiter
+				case r == '\n':
+					l.escapePrev()
+				case r == '\\':
+					l.next()
+				}
+			case r == div:
+				l.backup()
+				l.emit(ItemLit)
+				l.next()
+				l.emit(ItemDiv)
+				i--
+				if i == 0 {
+					// we collected both parts, look for flags
+				endSY:
+					switch r := l.next(); {
+					case r == 0:
+						l.emit(ItemEOF)
+						return nil
+					case r == '\n':
+						l.emit(ItemNewline)
+						return lexStart
+					case r == ';':
+						l.emit(ItemSemicolon)
+						return lexStart
+					case isSpace(r):
+						l.ignore()
+						goto endSY // this feels so good :)
+					case isFlag(r):
+						l.emit(ItemIdent)
+						l.acceptRun(" ") // optional space before additional arg
+						l.ignore()
+						switch r = l.next(); {
+						case r == 0:
+							l.emit(ItemEOF)
+							return nil
+						case r == '\n':
+							// no flags
+							l.emit(ItemNewline)
+							return lexStart
+						default:
+							// process until end of line as arg
+							for {
+								switch r = l.next(); {
+								case r == 0:
+									l.emit(ItemIdent)
+									l.emit(ItemEOF)
+									return nil
+								case r == '\n':
+									l.backup()
+									l.emit(ItemIdent)
+									l.emit(ItemNewline)
+									return lexStart
+								}
+							}
+						}
+					default:
+						l.emit(ItemError)
+						return nil
+					}
+				}
+			}
+		}
+	}
+}
 
-	l.s = stateEndAddr
+func lexLiteralLine(l *Lexer) stateFn {
+	for {
+		switch r := l.next(); {
+		case r == 0:
+			l.emit(ItemLit)
+			l.emit(ItemEOF)
+			return nil
+		case r == '\\':
+			if l.next() == '\n' {
+				l.escapePrev()
+			}
+		case r == '\n':
+			l.backup()
+			l.emit(ItemLit)
+			l.next()
+			l.emit(ItemNewline)
+			return lexStart
+		default:
+		}
+	}
+}
 
-	fmt.Println("Literal is: ", tok.Literal)
-	return tok
+func lexIdentToEnd(l *Lexer) stateFn {
+	for {
+		switch r := l.next(); {
+		case r == 0:
+			l.emit(ItemIdent)
+			l.emit(ItemEOF)
+			return nil
+		case r == ';':
+			l.backup()
+			l.emit(ItemIdent)
+			l.next()
+			l.emit(ItemSemicolon)
+			return lexStart
+		case r == '\n':
+			l.backup()
+			l.emit(ItemIdent)
+			l.next()
+			l.emit(ItemNewline)
+			return lexStart
+		}
+
+	}
 }

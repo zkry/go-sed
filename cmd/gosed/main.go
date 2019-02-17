@@ -88,10 +88,12 @@ func combineInputs(files []string) []byte {
 
 func programFromConfig(conf Config) (*gosed.Program, error) {
 	var programBuff bytes.Buffer
+	// Iterate through all of the commands, processing the two slices of commands,
+	// (conf.fileCommands and conf.eCommands) in the order that they arrived.
 	for {
 		if len(conf.fileCommands) == 0 && len(conf.eCommands) == 0 {
 			break
-		} else if len(conf.fileCommands) == 0 || conf.eCommands[0].order < conf.eCommands[0].order {
+		} else if len(conf.fileCommands) == 0 || conf.eCommands[0].order < conf.fileCommands[0].order {
 			cmd := conf.eCommands[0].cmd
 			conf.eCommands = conf.eCommands[1:]
 			programBuff.WriteString("\n" + cmd)
@@ -114,10 +116,6 @@ func programFromConfig(conf Config) (*gosed.Program, error) {
 	return program, nil
 }
 
-func displayHelp() {
-
-}
-
 func runFromStdin(program *gosed.Program) {
 	r := bufio.NewReader(os.Stdin)
 	for {
@@ -131,26 +129,29 @@ func runFromStdin(program *gosed.Program) {
 }
 
 func main() {
+	var helpFlag bool
 	var config Config
 	// flag.Var(&config.commandFiles, "f", "")
-	flag.Var(&config.fileCommands, "f", "")
-	flag.Var(&config.eCommands, "e", "")
-	flag.BoolVar(&config.silenceLine, "n", false, "")
-	flag.BoolVar(&config.bufferedOutput, "l", false, "")
-	flag.BoolVar(&config.appendFile, "a", false, "")
-	flag.BoolVar(&config.extendedRegexp, "E", false, "")
-	flag.BoolVar(&config.interactive, "i", false, "")
+	flag.Var(&config.fileCommands, "f", "file with sed commands to run")
+	flag.Var(&config.eCommands, "e", "string of command to execute")
+	flag.BoolVar(&config.silenceLine, "n", false, "silence the auto-print-line functionality")
+	flag.BoolVar(&helpFlag, "h", false, "usage guide")
+
+	// TODO: Implement support for following flags
+	//flag.BoolVar(&config.bufferedOutput, "l", false, "")
+	//flag.BoolVar(&config.appendFile, "a", false, "")
+	//flag.BoolVar(&config.extendedRegexp, "E", false, "")
+	//flag.BoolVar(&config.interactive, "i", false, "")
 	flag.Parse()
 	config.commandCt = order
 
-	if config.interactive {
-		runInteractive()
-	}
-
-	if config.commandCt == 0 && flag.NArg() == 0 {
+	if helpFlag || (config.commandCt == 0 && flag.NArg() == 0) {
 		displayHelp()
 		return
 	}
+	//if config.interactive {
+	//runInteractive()
+	//}
 
 	if config.commandCt > 0 {
 		program, err := programFromConfig(config)
@@ -176,7 +177,7 @@ func main() {
 		fname := flag.Arg(0)
 		program, err := gosed.Compile(fname, gosed.Options{})
 		if err != nil {
-			fmt.Printf("gosed: syntax error in %s\n", fname)
+			fmt.Printf("gosed: syntax error in %s\nerror:%v\n", fname, err.Error())
 			return
 		}
 		if flag.NArg() == 1 {
@@ -187,4 +188,20 @@ func main() {
 		out := program.Filter(programInput)
 		fmt.Print(string(out))
 	}
+}
+
+func displayHelp() {
+	fmt.Println(`gosed is a Go implementation of the Sed stream editor. 
+It seeks to behave as the standard sed command. There is currently
+no support for the GNU sed features. The following in an example of
+running two commands processing the file 'input.txt'. 
+
+      gosed -e 's/one/ONE/g' -e '/two/d' input.txt
+
+You can also run a file with sed commands as follows:
+
+      gosed -f processor.sed mytext.txt
+
+Flags:`)
+	flag.PrintDefaults()
 }

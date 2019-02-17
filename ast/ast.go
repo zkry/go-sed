@@ -2,18 +2,17 @@ package ast
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/zkry/go-sed/token"
+	"github.com/zkry/go-sed/lexer"
 )
 
 type Program struct {
 	Statements []statement
 	Labels     map[string]int
-	Tokens     []token.Token
+	Tokens     []lexer.Item
 }
 
 type addresser interface {
@@ -224,9 +223,6 @@ func (s *n2Stmt) Run(r *runtime) {
 		return
 	}
 	r.patternSpace += "\n" + r.lines[r.lineNo]
-	fmt.Println("  Current pattern space:")
-	fmt.Println(r.patternSpace)
-	fmt.Println("  ======================")
 }
 
 type pStmt struct {
@@ -242,7 +238,6 @@ type p2Stmt struct {
 }
 
 func (s *p2Stmt) Run(r *runtime) {
-	fmt.Println("Running P2 statement")
 	idx := strings.IndexRune(r.patternSpace, '\n')
 	if idx == -1 {
 		r.output += r.patternSpace
@@ -384,7 +379,6 @@ type blockStmt struct {
 }
 
 func (s *blockStmt) Run(r *runtime) {
-	fmt.Println("↓ Running BlockStmt")
 	r.directives.runBlock = s.Code
 }
 
@@ -401,10 +395,7 @@ type lineNoAddr struct {
 }
 
 func (a *lineNoAddr) Address(r *runtime) bool {
-	if r.lineNo+1 == a.LineNo {
-		return true
-	}
-	return false
+	return r.lineNo+1 == a.LineNo
 }
 
 type eofAddr struct{}

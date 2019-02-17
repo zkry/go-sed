@@ -1,9 +1,7 @@
-### NOTE: This is a work in progress and is currently not in a functional state as the lexer is going through a complete rewrite.
-
 # go-sed
-A sed implementation in Go.
+A sed implementation in Go. This project aims to be a fully compatable sed clone writen in pure Go with no dependencies. There is also a Go api that you can call to integrate this into other Go programs.
 
-This is a work in progress project that aims to be a fully compatable sed clone writen in pure Go. I will also have a library component that you can use to filter text. It should end up looking as follows:
+For example, the follwoing will indent the text by five spaces:
 
 ```go
 myTxt := `
@@ -21,29 +19,27 @@ cmd := sed.MustCompileProgram('s/^/     /')
 fmt.Println(cmd.FilterString(myTxt))
 ```
 
-## Usage
-Here is a possible usage API... still trying to work this out.
+## Command Line Tool
+This also command line tool that you can use in place of the standard sed command. You can install it by running `go get github.com/zkry/go-sed/cmd/gosed`.
+
+## API
+The current API for the package is as follows
 ```
-func MustCompileProgram(program string, opt Options) Program
-func CompileProgram(program string, opt Options) (Program, error)
+func MustCompile(program string, opt Options) Program
+func Compile(program string, opt Options) (Program, error)
 
 func (p Program) Copy(data []byte) Program
 
 func (p Program) Filter(data []byte) []byte
-func (p Program) FilterWithOptions(data []byte, opt Options) []byte
+func (p Program) FilterString(data []byte, opt Options) []byte
 
-func (p Program) FilterString(str string) string
-func (p Program) FilterStringWithOptions(data []byte, opt Options) []byte
+func (p Program) FilterA(str string) string
+func (p Program) FilterStringA(data []byte, opt Options) []byte
 
-func (p Program) Stream(chan []byte) chan []byte
-func (p Program) StreamWithOptions(chan []byte, opt Options) chan []byte
 ```
 
-This is still a work in progress and is in the very early stages of development.
+## Roadmap
 
-### Progress:
-- [x] Lexer
-- [x] Parser
-- [x] Evaluating Program
-- [ ] Command line program
-- [ ] Go Library
+- [ ] Thourough test suite for compatability with sed.
+- [ ] GNU sed features.
+- [ ] Implement more command line flags.

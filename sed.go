@@ -5,7 +5,6 @@ import (
 
 	"github.com/zkry/go-sed/ast"
 	"github.com/zkry/go-sed/lexer"
-	"github.com/zkry/go-sed/token"
 )
 
 type Options struct {
@@ -36,8 +35,7 @@ type Program struct {
 // MustCompile takes a sed script and compiles it into a program.
 // Panics if errors are found in script.
 func MustCompile(program string, opt Options) *Program {
-	l := lexer.New(program)
-	p := ast.New(l)
+	p := ast.New(program)
 	prg := p.ParseProgram()
 	errs := p.Errors()
 	if len(errs) > 0 {
@@ -49,11 +47,11 @@ func MustCompile(program string, opt Options) *Program {
 // Compile compiles a sed script and returns a program upon successfull
 // compilation. If unsuccessfull errors are returned.
 func Compile(program string, opt Options) (*Program, ast.ErrorList) {
-	l := lexer.New(program)
-	p := ast.New(l)
+	p := ast.New(program)
 	prg := p.ParseProgram()
 	errs := p.Errors()
-	if errs != nil {
+	if len(errs) > 0 {
+		fmt.Println("Compile: length of error: ", len(p.Errors()))
 		return nil, errs
 	}
 	return &Program{p: prg, opt: opt}, nil
@@ -101,9 +99,8 @@ func countLines(d string) int {
 	return ct
 }
 
-func Info(program string) []token.Token {
-	l := lexer.New(program)
-	p := ast.New(l)
+func Info(program string) []lexer.Item {
+	p := ast.New(program)
 	prg := p.ParseProgram()
 	return prg.Tokens
 }
